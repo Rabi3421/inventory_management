@@ -15,7 +15,6 @@ interface NavItem {
 const navItems: NavItem[] = [
   { label: 'Dashboard', icon: 'HomeIcon', href: '/dashboard', group: 'main' },
   { label: 'Products', icon: 'CubeIcon', href: '/dashboard/products', badge: 0, group: 'main' },
-  { label: 'Categories', icon: 'TagIcon', href: '/dashboard/categories', group: 'main' },
   { label: 'Inventory', icon: 'ClipboardDocumentListIcon', href: '/dashboard/inventory', badge: 7, group: 'main' },
   { label: 'Shops', icon: 'BuildingStorefrontIcon', href: '/shops', group: 'main' },
   { label: 'Users', icon: 'UsersIcon', href: '/users', group: 'admin' },
