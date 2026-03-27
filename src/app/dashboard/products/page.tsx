@@ -419,9 +419,9 @@ export default function ProductsPage() {
             {
               label: 'Catalog Value',
               value: stats.catalogValue >= 1000
-                ? `$${(stats.catalogValue / 1000).toFixed(1)}k`
-                : `$${stats.catalogValue.toFixed(2)}`,
-              icon: 'CurrencyDollarIcon',
+                ? `₹${(stats.catalogValue / 1000).toFixed(1)}k`
+                : `₹${stats.catalogValue.toFixed(2)}`,
+              icon: 'CurrencyRupeeIcon',
               color: 'indigo',
               sub: 'Available stock value',
             },
@@ -503,7 +503,7 @@ export default function ProductsPage() {
                             <p className="text-xs text-slate-400 font-mono">{s.sku}</p>
                           </div>
                           <div className="text-right shrink-0 ml-4">
-                            <p className="text-xs font-semibold text-slate-600">${s.price.toFixed(2)}</p>
+                            <p className="text-xs font-semibold text-slate-600">₹{s.price.toFixed(2)}</p>
                             <p className="text-[10px] text-slate-400">{s.totalQty} in stock</p>
                           </div>
                         </li>
@@ -514,7 +514,7 @@ export default function ProductsPage() {
                 {formErrors.name && <p className="mt-1 text-[11px] text-red-500">{formErrors.name}</p>}
               </FormField>
 
-              <FormField label="Product Price ($)" required>
+              <FormField label="Product Price (₹)" required>
                 <input
                   type="number"
                   min="0"
@@ -750,7 +750,7 @@ export default function ProductsPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-slate-700 whitespace-nowrap">
-                          ${product.price.toFixed(2)}
+                          ₹{product.price.toFixed(2)}
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-slate-700 tabular-nums">
                           {product.totalQty.toLocaleString()}
@@ -886,7 +886,7 @@ export default function ProductsPage() {
                 <p className="text-sm font-semibold text-slate-800">{printTarget.productName}</p>
                 <div className="flex items-center gap-4 text-xs text-slate-500">
                   <span className="font-mono">{printTarget.sku}</span>
-                  <span>${printTarget.price.toFixed(2)}</span>
+                  <span>₹{printTarget.price.toFixed(2)}</span>
                 </div>
               </div>
               {/* Label count info */}

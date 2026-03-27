@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { ProductModel } from '@/lib/models/Product';
+import { InventoryLogModel } from '@/lib/models/InventoryLog';
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -124,6 +125,18 @@ export async function POST(request: NextRequest) {
       existingByName.unitCounter = prevCounter + quantity;
       await existingByName.save();
 
+      // Record restock movement in the inventory ledger
+      await InventoryLogModel.create({
+        productId: existingByName._id,
+        productName: existingByName.name,
+        productSku: existingByName.sku,
+        type: 'restock',
+        qty: quantity,
+        balanceAfter: existingByName.availableQty,
+        note: `Restocked ${quantity} unit${quantity !== 1 ? 's' : ''}`,
+        performedBy: 'superadmin',
+      });
+
       const prefix = unitPrefix(existingByName.name);
       const padWidth = String(existingByName.unitCounter).length;
       const unitBarcodes: string[] = Array.from({ length: quantity }, (_, i) =>
@@ -166,6 +179,18 @@ export async function POST(request: NextRequest) {
       totalQty: quantity,
       availableQty: quantity,
       unitCounter: quantity,
+    });
+
+    // Record initial purchase in the inventory ledger
+    await InventoryLogModel.create({
+      productId: product._id,
+      productName: product.name,
+      productSku: product.sku,
+      type: 'purchase',
+      qty: quantity,
+      balanceAfter: quantity,
+      note: `Initial stock of ${quantity} unit${quantity !== 1 ? 's' : ''} added`,
+      performedBy: 'superadmin',
     });
 
     const prefix = unitPrefix(product.name);

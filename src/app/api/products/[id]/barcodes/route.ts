@@ -107,7 +107,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           const code = `${prefix}-${zeroPad(unitNum, padWidth)}`;
           return `
       <div class="label">
-        <p class="unit-price">$${product.price.toFixed(2)}</p>
+        <p class="unit-price">₹${product.price.toFixed(2)}</p>
         <p class="product-name">${escapeHtml(product.name)}</p>
         <img src="${src}" alt="barcode" />
         <p class="unit-info">${code}</p>

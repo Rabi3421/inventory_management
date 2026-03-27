@@ -64,7 +64,7 @@ function RevenueTooltip({ active, payload, label }: TooltipProps<number, string>
             <span className="text-slate-500 capitalize">{p.name}</span>
           </div>
           <span className="font-semibold text-slate-800">
-            {p.name === 'revenue' ? `$${(p.value as number).toLocaleString()}` : (p.value as number).toLocaleString()}
+            {p.name === 'revenue' ? `₹${(p.value as number).toLocaleString()}` : (p.value as number).toLocaleString()}
           </span>
         </div>
       ))}
@@ -129,10 +129,10 @@ export default function ReportsPage() {
         {/* KPI Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: 'Total Revenue', value: `$${totalRevenue.toLocaleString()}`, trend: '+12.4%', icon: 'BanknotesIcon', color: 'bg-indigo-50 text-indigo-600', border: 'border-indigo-100', up: true },
+            { label: 'Total Revenue', value: `₹${totalRevenue.toLocaleString()}`, trend: '+12.4%', icon: 'BanknotesIcon', color: 'bg-indigo-50 text-indigo-600', border: 'border-indigo-100', up: true },
             { label: 'Total Orders', value: totalOrders.toLocaleString(), trend: '+8.2%', icon: 'ShoppingCartIcon', color: 'bg-sky-50 text-sky-600', border: 'border-sky-100', up: true },
-            { label: 'Avg Order Value', value: `$${avgOrderValue}`, trend: '+3.8%', icon: 'ReceiptPercentIcon', color: 'bg-violet-50 text-violet-600', border: 'border-violet-100', up: true },
-            { label: 'Top Shop', value: topShop.shop, trend: `$${topShop.revenue.toLocaleString()}`, icon: 'TrophyIcon', color: 'bg-amber-50 text-amber-600', border: 'border-amber-100', up: true },
+            { label: 'Avg Order Value', value: `₹${avgOrderValue}`, trend: '+3.8%', icon: 'ReceiptPercentIcon', color: 'bg-violet-50 text-violet-600', border: 'border-violet-100', up: true },
+            { label: 'Top Shop', value: topShop.shop, trend: `₹${topShop.revenue.toLocaleString()}`, icon: 'TrophyIcon', color: 'bg-amber-50 text-amber-600', border: 'border-amber-100', up: true },
           ].map(card => (
             <div key={card.label} className={`bg-white rounded-xl border ${card.border} shadow-card p-4`}>
               <div className="flex items-center justify-between mb-2">
@@ -196,7 +196,7 @@ export default function ReportsPage() {
                 <BarChart data={monthlySales} barGap={2} barCategoryGap="30%">
                   <CartesianGrid vertical={false} stroke="#f1f5f9" strokeDasharray="3 3" />
                   <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
                   <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                   <Tooltip content={<RevenueTooltip />} />
                   <Bar yAxisId="left" dataKey="revenue" name="revenue" fill="#4f46e5" radius={[5, 5, 0, 0]} />
@@ -230,7 +230,7 @@ export default function ReportsPage() {
                       <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: c.color }} />
                       <span className="text-slate-500">{c.name}</span>
                     </div>
-                    <span className="font-semibold text-slate-700">${(c.value / 1000).toFixed(1)}k</span>
+                    <span className="font-semibold text-slate-700">₹{(c.value / 1000).toFixed(1)}k</span>
                   </div>
                 ))}
               </div>
@@ -260,7 +260,7 @@ export default function ReportsPage() {
               <BarChart data={shopPerformance} barGap={2} barCategoryGap="30%">
                 <CartesianGrid vertical={false} stroke="#f1f5f9" strokeDasharray="3 3" />
                 <XAxis dataKey="shop" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
+                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
                 <Tooltip content={<RevenueTooltip />} />
                 <Bar dataKey="revenue" name="revenue" fill="#4f46e5" radius={[5, 5, 0, 0]} />
                 <Bar dataKey="target" name="target" fill="#e2e8f0" radius={[5, 5, 0, 0]} />

@@ -173,7 +173,7 @@ export default function ShopAdminInventoryPage() {
                 <Icon name="BanknotesIcon" size={16} className="text-emerald-600" />
               </div>
             </div>
-            <p className="text-3xl font-bold text-slate-800">${(totalValue / 1000).toFixed(1)}k</p>
+            <p className="text-3xl font-bold text-slate-800">₹{(totalValue / 1000).toFixed(1)}k</p>
             <p className="text-xs text-slate-400 mt-1">Total stock value</p>
           </div>
         </div>

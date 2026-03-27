@@ -63,7 +63,7 @@ function SalesTooltip({ active, payload, label }: TooltipProps<number, string>) 
             <span className="text-slate-500 capitalize">{p.name}</span>
           </div>
           <span className="font-semibold text-slate-800">
-            {p.name === 'revenue' ? `$${(p.value as number).toLocaleString()}` : p.value}
+            {p.name === 'revenue' ? `₹${(p.value as number).toLocaleString()}` : p.value}
           </span>
         </div>
       ))}
@@ -133,9 +133,9 @@ export default function ShopAdminReportsPage() {
         {/* KPI Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: 'Shop Revenue', value: `$${totalRevenue.toLocaleString()}`, trend: '+9.4%', icon: 'BanknotesIcon', color: 'bg-emerald-50 text-emerald-600', border: 'border-emerald-100', up: true },
+            { label: 'Shop Revenue', value: `₹${totalRevenue.toLocaleString()}`, trend: '+9.4%', icon: 'BanknotesIcon', color: 'bg-emerald-50 text-emerald-600', border: 'border-emerald-100', up: true },
             { label: 'Total Orders', value: totalOrders.toLocaleString(), trend: '+6.1%', icon: 'ShoppingCartIcon', color: 'bg-sky-50 text-sky-600', border: 'border-sky-100', up: true },
-            { label: 'Avg Order Value', value: `$${avgOrderValue}`, trend: '+2.6%', icon: 'ReceiptPercentIcon', color: 'bg-indigo-50 text-indigo-600', border: 'border-indigo-100', up: true },
+            { label: 'Avg Order Value', value: `₹${avgOrderValue}`, trend: '+2.6%', icon: 'ReceiptPercentIcon', color: 'bg-indigo-50 text-indigo-600', border: 'border-indigo-100', up: true },
             { label: 'Top Product', value: topProduct.name.split(' ').slice(0, 2).join(' '), trend: `${topProduct.sold} sold`, icon: 'TrophyIcon', color: 'bg-amber-50 text-amber-600', border: 'border-amber-100', up: true },
           ].map(card => (
             <div key={card.label} className={`bg-white rounded-xl border ${card.border} shadow-card p-4`}>
@@ -200,7 +200,7 @@ export default function ShopAdminReportsPage() {
                 <BarChart data={weeklySales} barGap={2} barCategoryGap="30%">
                   <CartesianGrid vertical={false} stroke="#f1f5f9" strokeDasharray="3 3" />
                   <XAxis dataKey="week" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
                   <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                   <Tooltip content={<SalesTooltip />} />
                   <Bar yAxisId="left" dataKey="revenue" name="revenue" fill="#10b981" radius={[5, 5, 0, 0]} />
@@ -234,7 +234,7 @@ export default function ShopAdminReportsPage() {
                       <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: c.color }} />
                       <span className="text-slate-500">{c.name}</span>
                     </div>
-                    <span className="font-semibold text-slate-700">${(c.value / 1000).toFixed(1)}k</span>
+                    <span className="font-semibold text-slate-700">₹{(c.value / 1000).toFixed(1)}k</span>
                   </div>
                 ))}
               </div>

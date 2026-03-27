@@ -154,7 +154,7 @@ export default function ShopAdminProductsPage() {
                 <Icon name="CurrencyDollarIcon" size={16} className="text-emerald-600" />
               </div>
             </div>
-            <p className="text-3xl font-bold text-slate-800">${(totalValue / 1000).toFixed(1)}k</p>
+            <p className="text-3xl font-bold text-slate-800">₹{(totalValue / 1000).toFixed(1)}k</p>
             <p className="text-xs text-slate-400 mt-1">Current stock value</p>
           </div>
         </div>
@@ -296,7 +296,7 @@ export default function ShopAdminProductsPage() {
                         <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{product.category}</span>
                       </td>
                       <td className="px-3 py-3 text-xs text-slate-500">{product.brand}</td>
-                      <td className="px-3 py-3 text-sm font-semibold text-slate-700">${product.unitPrice.toFixed(2)}</td>
+                      <td className="px-3 py-3 text-sm font-semibold text-slate-700">₹{product.unitPrice.toFixed(2)}</td>
                       <td className="px-3 py-3">
                         <span className={`text-sm font-semibold ${product.stockQty === 0 ? 'text-red-600' : product.stockQty <= product.threshold ? 'text-amber-600' : 'text-slate-700'}`}>
                           {product.stockQty}

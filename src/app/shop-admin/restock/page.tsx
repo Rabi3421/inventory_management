@@ -145,7 +145,7 @@ export default function ShopAdminRestockPage() {
             { label: 'Pending', value: pending, icon: 'ClockIcon', color: 'bg-amber-50 text-amber-600', border: 'border-amber-100' },
             { label: 'Approved', value: approved, icon: 'CheckCircleIcon', color: 'bg-sky-50 text-sky-600', border: 'border-sky-100' },
             { label: 'Fulfilled', value: fulfilled, icon: 'TruckIcon', color: 'bg-emerald-50 text-emerald-600', border: 'border-emerald-100' },
-            { label: 'Est. Value', value: `$${totalValue.toLocaleString()}`, icon: 'BanknotesIcon', color: 'bg-indigo-50 text-indigo-600', border: 'border-indigo-100' },
+            { label: 'Est. Value', value: `₹${totalValue.toLocaleString()}`, icon: 'BanknotesIcon', color: 'bg-indigo-50 text-indigo-600', border: 'border-indigo-100' },
           ].map(card => (
             <div key={card.label} className={`bg-white rounded-xl border ${card.border} shadow-card p-4 flex items-center gap-3`}>
               <div className={`w-10 h-10 rounded-xl ${card.color} flex items-center justify-center shrink-0`}>

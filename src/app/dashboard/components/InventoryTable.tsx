@@ -319,7 +319,7 @@ export default function InventoryTable() {
                       </div>
                     </td>
                     <td className="px-3 py-3">
-                      <span className="font-tabular text-xs text-slate-600">${item.unitCost.toFixed(2)}</span>
+                      <span className="font-tabular text-xs text-slate-600">₹{item.unitCost.toFixed(2)}</span>
                     </td>
                     <td className="px-3 py-3">
                       <span className="text-xs text-slate-400 font-tabular">
