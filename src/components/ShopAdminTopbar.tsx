@@ -41,7 +41,7 @@ export default function ShopAdminTopbar() {
         {/* Shop indicator */}
         <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5">
           <Icon name="BuildingStorefrontIcon" size={13} className="text-emerald-600" />
-          <span className="font-medium">Lekki Branch</span>
+          <span className="font-medium">{isLoading ? '…' : (user?.shopName ?? 'My Shop')}</span>
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
         </div>
 

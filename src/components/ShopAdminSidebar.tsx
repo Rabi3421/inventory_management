@@ -1,8 +1,9 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import AppLogo from '@/components/ui/AppLogo';
 import Icon from '@/components/ui/AppIcon';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface NavItem {
   label: string;
@@ -11,12 +12,11 @@ interface NavItem {
   badge?: number;
 }
 
-const navItems: NavItem[] = [
+const BASE_NAV: NavItem[] = [
   { label: 'Dashboard', icon: 'HomeIcon', href: '/shop-admin/dashboard' },
-  { label: 'My Inventory', icon: 'ClipboardDocumentListIcon', href: '/shop-admin/inventory', badge: 3 },
+  { label: 'My Inventory', icon: 'ClipboardDocumentListIcon', href: '/shop-admin/inventory' },
   { label: 'Products', icon: 'CubeIcon', href: '/shop-admin/products' },
-  { label: 'Categories', icon: 'TagIcon', href: '/shop-admin/categories' },
-  { label: 'Restock Requests', icon: 'TruckIcon', href: '/shop-admin/restock', badge: 2 },
+  { label: 'Billing', icon: 'ReceiptPercentIcon', href: '/shop-admin/billing' },
   { label: 'Reports', icon: 'ChartBarIcon', href: '/shop-admin/reports' },
   { label: 'Settings', icon: 'Cog6ToothIcon', href: '/shop-admin/settings' },
 ];
@@ -27,6 +27,26 @@ interface ShopAdminSidebarProps {
 
 export default function ShopAdminSidebar({ activeRoute = '/shop-admin/dashboard' }: ShopAdminSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const { user } = useAuth();
+  const shopName = user?.shopName ?? 'My Shop';
+  const shopId   = user?.shopId   ?? '';
+
+  const [lowStock, setLowStock] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (!shopId) return;
+    fetch(`/api/inventory?shopId=${shopId}&page=1&limit=1`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => setLowStock(data.stats?.lowStock ?? 0))
+      .catch(() => {});
+  }, [shopId]);
+
+  const navItems: NavItem[] = BASE_NAV.map(item => {
+    if (item.href === '/shop-admin/inventory' && lowStock !== undefined && lowStock > 0) {
+      return { ...item, badge: lowStock };
+    }
+    return item;
+  });
 
   return (
     <aside
@@ -59,7 +79,7 @@ export default function ShopAdminSidebar({ activeRoute = '/shop-admin/dashboard'
               <Icon name="BuildingStorefrontIcon" size={14} className="text-white" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-semibold text-emerald-800 truncate">Lekki Branch</p>
+              <p className="text-xs font-semibold text-emerald-800 truncate">{shopName}</p>
               <p className="text-[10px] text-emerald-600 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
                 Live · Synced

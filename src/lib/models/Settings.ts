@@ -23,6 +23,11 @@ export interface AppSettings {
   secSessionTimeout: boolean;
   secIpWhitelist: boolean;
   secAuditLog: boolean;
+  // Shop-admin preferences
+  shopOpenTime: string;
+  shopCloseTime: string;
+  autoLowStockAlerts: boolean;
+  autoRestockRequest: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -46,6 +51,10 @@ const settingsSchema = new Schema<AppSettings>(
     secSessionTimeout:    { type: Boolean, default: false },
     secIpWhitelist:       { type: Boolean, default: false },
     secAuditLog:          { type: Boolean, default: true },
+    shopOpenTime:         { type: String,  default: '08:00' },
+    shopCloseTime:        { type: String,  default: '20:00' },
+    autoLowStockAlerts:   { type: Boolean, default: true },
+    autoRestockRequest:   { type: Boolean, default: false },
   },
   { timestamps: true },
 );

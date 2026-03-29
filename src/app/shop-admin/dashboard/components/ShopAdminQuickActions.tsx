@@ -1,94 +1,50 @@
 'use client';
 import React, { useState } from 'react';
 import Icon from '@/components/ui/AppIcon';
+import { useRouter } from 'next/navigation';
 
-interface QuickAction {
-  id: string;
-  label: string;
-  description: string;
-  icon: string;
-  color: string;
-  bgColor: string;
-  borderColor: string;
+export interface StockAlert {
+  _id:       string;
+  sku:       string;
+  name:      string;
+  qty:       number;
+  threshold: number;
+  status:    'low' | 'out';
 }
 
-const quickActions: QuickAction[] = [
-  {
-    id: 'qa-add-product',
-    label: 'Add New Product',
-    description: 'Create a new SKU with barcode',
-    icon: 'PlusCircleIcon',
-    color: 'text-emerald-700',
-    bgColor: 'bg-emerald-50 hover:bg-emerald-100',
-    borderColor: 'border-emerald-100',
-  },
-  {
-    id: 'qa-scan-barcode',
-    label: 'Scan Barcode',
-    description: 'Look up or update by scan',
-    icon: 'QrCodeIcon',
-    color: 'text-indigo-700',
-    bgColor: 'bg-indigo-50 hover:bg-indigo-100',
-    borderColor: 'border-indigo-100',
-  },
-  {
-    id: 'qa-restock',
-    label: 'Record Restock',
-    description: 'Log incoming stock delivery',
-    icon: 'TruckIcon',
-    color: 'text-sky-700',
-    bgColor: 'bg-sky-50 hover:bg-sky-100',
-    borderColor: 'border-sky-100',
-  },
-  {
-    id: 'qa-export-report',
-    label: 'Export Report',
-    description: 'Download my shop CSV report',
-    icon: 'ArrowDownTrayIcon',
-    color: 'text-violet-700',
-    bgColor: 'bg-violet-50 hover:bg-violet-100',
-    borderColor: 'border-violet-100',
-  },
+interface Props {
+  alerts:  StockAlert[];
+  loading: boolean;
+}
+
+const quickActions = [
+  { id: 'qa-add-product',   label: 'Add New Product',  description: 'Create a new SKU with barcode',    icon: 'PlusCircleIcon',    color: 'text-emerald-700', bgColor: 'bg-emerald-50 hover:bg-emerald-100', borderColor: 'border-emerald-100', href: '/shop-admin/products' },
+  { id: 'qa-scan-barcode',  label: 'Scan Barcode',     description: 'Look up or update by scan',       icon: 'QrCodeIcon',        color: 'text-indigo-700',  bgColor: 'bg-indigo-50 hover:bg-indigo-100',   borderColor: 'border-indigo-100',  href: '' },
+  { id: 'qa-restock',       label: 'Record Restock',   description: 'Log incoming stock delivery',     icon: 'TruckIcon',         color: 'text-sky-700',    bgColor: 'bg-sky-50 hover:bg-sky-100',         borderColor: 'border-sky-100',     href: '/shop-admin/restock' },
+  { id: 'qa-export-report', label: 'Export Report',    description: 'Download my shop CSV report',     icon: 'ArrowDownTrayIcon', color: 'text-violet-700',  bgColor: 'bg-violet-50 hover:bg-violet-100',   borderColor: 'border-violet-100',  href: '/shop-admin/reports' },
 ];
 
-const stockAlerts = [
-  { id: 'alert-001', product: 'Samsung 55" QLED TV', qty: 2, threshold: 10, type: 'low' as const },
-  { id: 'alert-002', product: 'Nike Air Max 270', qty: 0, threshold: 15, type: 'out' as const },
-  { id: 'alert-003', product: 'iPhone 15 Pro Case', qty: 0, threshold: 8, type: 'out' as const },
-  { id: 'alert-004', product: 'Indomie Noodles 70g', qty: 4, threshold: 20, type: 'low' as const },
-];
-
-export default function ShopAdminQuickActions() {
+export default function ShopAdminQuickActions({ alerts, loading }: Props) {
   const [activeSection, setActiveSection] = useState<'actions' | 'alerts'>('actions');
+  const router = useRouter();
 
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-card overflow-hidden h-full flex flex-col">
       <div className="px-5 pt-5 pb-4 border-b border-slate-100">
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-base font-semibold text-slate-800">Quick Actions</h3>
-          <span className="flex items-center gap-1 text-xs text-red-600 bg-red-50 border border-red-100 rounded-full px-2 py-0.5 font-medium">
-            <Icon name="ExclamationCircleIcon" size={12} />
-            {stockAlerts.length} alerts
-          </span>
+          {!loading && alerts.length > 0 && (
+            <span className="flex items-center gap-1 text-xs text-red-600 bg-red-50 border border-red-100 rounded-full px-2 py-0.5 font-medium">
+              <Icon name="ExclamationCircleIcon" size={12} />{alerts.length} alerts
+            </span>
+          )}
         </div>
         <div className="flex gap-1 mt-3 p-0.5 bg-slate-100 rounded-lg">
-          {([
-            { key: 'actions', label: 'Actions' },
-            { key: 'alerts', label: 'Stock Alerts' },
-          ] as { key: 'actions' | 'alerts'; label: string }[]).map(tab => (
-            <button
-              key={`panel-tab-${tab.key}`}
-              onClick={() => setActiveSection(tab.key)}
-              className={`
-                flex-1 py-1.5 rounded-md text-xs font-medium transition-all duration-150
-                ${activeSection === tab.key
-                  ? 'bg-white text-emerald-700 shadow-card'
-                  : 'text-slate-500 hover:text-slate-700'
-                }
-              `}
-            >
-              {tab.label}
-            </button>
+          {([{ key: 'actions', label: 'Actions' }, { key: 'alerts', label: 'Stock Alerts' }] as { key: 'actions' | 'alerts'; label: string }[]).map(tab => (
+            <button key={`panel-tab-${tab.key}`} onClick={() => setActiveSection(tab.key)}
+              className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-all duration-150 ${
+                activeSection === tab.key ? 'bg-white text-emerald-700 shadow-card' : 'text-slate-500 hover:text-slate-700'
+              }`}>{tab.label}</button>
           ))}
         </div>
       </div>
@@ -97,20 +53,10 @@ export default function ShopAdminQuickActions() {
         {activeSection === 'actions' ? (
           <div className="space-y-2">
             {quickActions.map(action => (
-              <button
-                key={action.id}
-                className={`
-                  w-full flex items-center gap-3 p-3 rounded-xl border text-left
-                  transition-all duration-150 active:scale-[0.98]
-                  ${action.bgColor} ${action.borderColor}
-                `}
-              >
+              <button key={action.id} onClick={() => action.href && router.push(action.href)}
+                className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all duration-150 active:scale-[0.98] ${action.bgColor} ${action.borderColor}`}>
                 <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-white/60">
-                  <Icon
-                    name={action.icon as Parameters<typeof Icon>[0]['name']}
-                    size={18}
-                    className={action.color}
-                  />
+                  <Icon name={action.icon as Parameters<typeof Icon>[0]['name']} size={18} className={action.color} />
                 </div>
                 <div className="min-w-0">
                   <p className={`text-sm font-semibold ${action.color}`}>{action.label}</p>
@@ -120,39 +66,35 @@ export default function ShopAdminQuickActions() {
               </button>
             ))}
           </div>
+        ) : loading ? (
+          <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-16 rounded-xl bg-slate-100 animate-pulse" />)}</div>
+        ) : alerts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-10 text-center">
+            <Icon name="CheckCircleIcon" size={32} className="text-emerald-400 mb-2" />
+            <p className="text-sm font-medium text-slate-600">All stocked up!</p>
+            <p className="text-xs text-slate-400 mt-1">No items need immediate attention.</p>
+          </div>
         ) : (
           <div className="space-y-2">
             <p className="text-xs text-slate-400 mb-3 font-medium">Products requiring immediate attention</p>
-            {stockAlerts.map(alert => (
-              <div
-                key={alert.id}
-                className={`
-                  p-3 rounded-xl border
-                  ${alert.type === 'out' ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'}
-                `}
-              >
+            {alerts.map(alert => (
+              <div key={alert._id}
+                className={`p-3 rounded-xl border ${alert.status === 'out' ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'}`}>
                 <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <p className="text-xs font-semibold text-slate-700 leading-tight">{alert.product}</p>
-                  <span
-                    className={`
-                      shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full
-                      ${alert.type === 'out' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}
-                    `}
-                  >
-                    {alert.type === 'out' ? 'Out of Stock' : 'Low Stock'}
-                  </span>
+                  <p className="text-xs font-semibold text-slate-700 leading-tight">{alert.name}</p>
+                  <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                    alert.status === 'out' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                  }`}>{alert.status === 'out' ? 'Out of Stock' : 'Low Stock'}</span>
                 </div>
+                <p className="text-[11px] text-slate-400 font-mono mb-1.5">{alert.sku}</p>
                 <div className="flex items-center justify-between text-xs text-slate-500">
                   <span className="font-tabular">
-                    <span className={`font-semibold ${alert.type === 'out' ? 'text-red-600' : 'text-amber-600'}`}>
-                      {alert.qty}
-                    </span>
+                    <span className={`font-semibold ${alert.status === 'out' ? 'text-red-600' : 'text-amber-600'}`}>{alert.qty}</span>
                     <span className="text-slate-400"> / {alert.threshold} threshold</span>
                   </span>
                 </div>
                 <button className="mt-2 text-xs font-medium text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
-                  <Icon name="ArrowPathIcon" size={11} />
-                  Reorder now
+                  <Icon name="ArrowPathIcon" size={11} />Reorder now
                 </button>
               </div>
             ))}
@@ -162,3 +104,5 @@ export default function ShopAdminQuickActions() {
     </div>
   );
 }
+
+

@@ -1,254 +1,510 @@
 'use client';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import ShopAdminLayout from '@/components/ShopAdminLayout';
 import Icon from '@/components/ui/AppIcon';
+import { useAuth } from '@/contexts/AuthContext';
 
-type ProductStatus = 'Active' | 'Inactive' | 'Discontinued';
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Product {
-  id: string;
+  _id: string;
   sku: string;
   name: string;
-  category: string;
-  brand: string;
-  unitPrice: number;
-  stockQty: number;
-  threshold: number;
-  status: ProductStatus;
-  addedDate: string;
+  description: string;
+  price: number;
+  totalQty: number;
+  availableQty: number;
+  createdAt: string;
 }
 
-const productsData: Product[] = [
-  { id: 'p-001', sku: 'SKU-9934512', name: 'Indomie Noodles 70g Chicken (Carton)', category: 'Food & Bev', brand: 'Indomie', unitPrice: 18, stockQty: 54, threshold: 20, status: 'Active', addedDate: '2025-09-14' },
-  { id: 'p-002', sku: 'SKU-4412087', name: 'Nike Air Max 270 — Men\'s Sz 42', category: 'Apparel', brand: 'Nike', unitPrice: 120, stockQty: 0, threshold: 5, status: 'Active', addedDate: '2025-10-05' },
-  { id: 'p-003', sku: 'SKU-1120438', name: 'Dettol Antiseptic Liquid 1L', category: 'Health & Beauty', brand: 'Dettol', unitPrice: 7, stockQty: 6, threshold: 25, status: 'Active', addedDate: '2025-10-30' },
-  { id: 'p-004', sku: 'SKU-6671209', name: 'Nestlé Milo 900g Tin', category: 'Food & Bev', brand: 'Nestlé', unitPrice: 9, stockQty: 38, threshold: 30, status: 'Active', addedDate: '2025-08-20' },
-  { id: 'p-005', sku: 'SKU-9901234', name: 'Nivea Men Deep Impact Deodorant 150ml', category: 'Health & Beauty', brand: 'Nivea', unitPrice: 4, stockQty: 88, threshold: 40, status: 'Active', addedDate: '2025-08-05' },
-  { id: 'p-006', sku: 'SKU-8812944', name: 'Adidas Tiro 23 Training Shorts', category: 'Apparel', brand: 'Adidas', unitPrice: 45, stockQty: 14, threshold: 10, status: 'Active', addedDate: '2025-07-15' },
-  { id: 'p-007', sku: 'SKU-3341827', name: 'iPhone 15 Pro Silicone Case', category: 'Electronics', brand: 'Apple', unitPrice: 35, stockQty: 0, threshold: 8, status: 'Inactive', addedDate: '2025-11-28' },
-  { id: 'p-008', sku: 'SKU-2234567', name: 'Oral-B Pro 2000 Electric Toothbrush', category: 'Health & Beauty', brand: 'Oral-B', unitPrice: 55, stockQty: 9, threshold: 5, status: 'Active', addedDate: '2026-02-01' },
-  { id: 'p-009', sku: 'SKU-6678234', name: 'Puma RS-X Sneakers White/Blue', category: 'Apparel', brand: 'Puma', unitPrice: 90, stockQty: 0, threshold: 4, status: 'Discontinued', addedDate: '2025-05-18' },
-  { id: 'p-010', sku: 'SKU-3312098', name: 'Panasonic Microwave NN-ST34HM', category: 'Electronics', brand: 'Panasonic', unitPrice: 145, stockQty: 3, threshold: 3, status: 'Active', addedDate: '2026-01-10' },
-];
+interface ProductStats {
+  totalProducts: number;
+  totalUnits: number;
+  availableUnits: number;
+  catalogValue: number;
+}
 
-const statusConfig: Record<ProductStatus, { className: string }> = {
-  'Active': { className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
-  'Inactive': { className: 'bg-amber-50 text-amber-700 border border-amber-200' },
-  'Discontinued': { className: 'bg-red-50 text-red-700 border border-red-200' },
-};
+interface FormState {
+  name: string;
+  quantity: string;
+  price: string;
+  description: string;
+  sku: string;
+  skuMode: 'auto' | 'manual';
+}
 
-const categories = ['All', 'Electronics', 'Apparel', 'Food & Bev', 'Health & Beauty'];
+interface EditState {
+  name: string;
+  price: string;
+  totalQty: string;
+  availableQty: string;
+  description: string;
+  sku: string;
+}
 
-type SortKey = 'name' | 'category' | 'unitPrice' | 'stockQty' | 'status';
+interface PrintTarget {
+  productId: string;
+  productName: string;
+  sku: string;
+  qty: number;
+  totalQty: number;
+  price: number;
+  barcodePrintUrl: string;
+  restocked: boolean;
+}
+
+type SortKey = 'name' | 'price' | 'availableQty' | 'totalQty' | 'createdAt';
 type SortDir = 'asc' | 'desc';
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const EMPTY_FORM: FormState = { name: '', quantity: '', price: '', description: '', sku: '', skuMode: 'auto' };
+const PAGE_SIZE = 50;
+
+const inputBase =
+  'w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all';
+
+// ── Page ─────────────────────────────────────────────────────────────────────
+
 export default function ShopAdminProductsPage() {
-  const [search, setSearch] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('All');
-  const [statusFilter, setStatusFilter] = useState<ProductStatus | 'All'>('All');
-  const [sortKey, setSortKey] = useState<SortKey>('name');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
-  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const { user } = useAuth();
+  const shopId   = user?.shopId   ?? '';
+  const shopName = user?.shopName ?? 'My Shop';
 
-  const filtered = useMemo(() => {
-    let data = [...productsData];
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      data = data.filter(p => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || p.brand.toLowerCase().includes(q));
+  // Data
+  const [products, setProducts]       = useState<Product[]>([]);
+  const [stats, setStats]             = useState<ProductStats>({ totalProducts: 0, totalUnits: 0, availableUnits: 0, catalogValue: 0 });
+  const [totalPages, setTotalPages]   = useState(1);
+  const [totalCount, setTotalCount]   = useState(0);
+  const [isLoading, setIsLoading]     = useState(true);
+  const [loadError, setLoadError]     = useState('');
+
+  // Table
+  const [search, setSearch]               = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [sortKey, setSortKey]             = useState<SortKey>('createdAt');
+  const [sortDir, setSortDir]             = useState<SortDir>('desc');
+  const [page, setPage]                   = useState(1);
+
+  // Add form
+  const [form, setForm]               = useState<FormState>(EMPTY_FORM);
+  const [formErrors, setFormErrors]   = useState<Partial<Record<keyof FormState, string>>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [apiError, setApiError]       = useState('');
+
+  // Name autocomplete
+  const [nameSuggestions, setNameSuggestions] = useState<Product[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const nameInputRef      = useRef<HTMLInputElement>(null);
+  const quantityInputRef  = useRef<HTMLInputElement>(null);
+  const suggestTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchTimeoutRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Edit modal
+  const [editTarget, setEditTarget]     = useState<Product | null>(null);
+  const [editState, setEditState]       = useState<EditState>({ name: '', price: '', totalQty: '', availableQty: '', description: '', sku: '' });
+  const [editErrors, setEditErrors]     = useState<Partial<Record<keyof EditState, string>>>({});
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editApiError, setEditApiError] = useState('');
+
+  // Delete modal
+  const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
+  const [isDeleting, setIsDeleting]     = useState(false);
+
+  // Print barcodes modal
+  const [printTarget, setPrintTarget]   = useState<PrintTarget | null>(null);
+
+  // ── Search debounce ───────────────────────────────────────────────────────
+  useEffect(() => {
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 350);
+    return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
+  }, [search]);
+
+  // ── Fetch products ────────────────────────────────────────────────────────
+  const fetchProducts = useCallback(async () => {
+    if (!shopId) return;
+    setIsLoading(true);
+    setLoadError('');
+    try {
+      const params = new URLSearchParams({ shopId, page: String(page), limit: String(PAGE_SIZE), sort: sortKey, dir: sortDir, ...(debouncedSearch ? { search: debouncedSearch } : {}) });
+      const res = await fetch(`/api/products?${params}`, { credentials: 'include' });
+      if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error ?? 'Failed to load products.'); }
+      const data = await res.json();
+      setProducts(data.products ?? []);
+      setTotalPages(data.pagination?.totalPages ?? 1);
+      setTotalCount(data.pagination?.total ?? 0);
+      setStats(data.stats ?? { totalProducts: 0, totalUnits: 0, availableUnits: 0, catalogValue: 0 });
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Unknown error.');
+    } finally {
+      setIsLoading(false);
     }
-    if (categoryFilter !== 'All') data = data.filter(p => p.category === categoryFilter);
-    if (statusFilter !== 'All') data = data.filter(p => p.status === statusFilter);
-    data.sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
-      if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av;
-      return sortDir === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
-    });
-    return data;
-  }, [search, categoryFilter, statusFilter, sortKey, sortDir]);
+  }, [shopId, page, sortKey, sortDir, debouncedSearch]);
 
+  useEffect(() => { fetchProducts(); }, [fetchProducts]);
+
+  // ── Name autocomplete ─────────────────────────────────────────────────────
+  const fetchNameSuggestions = useCallback((query: string) => {
+    if (suggestTimeoutRef.current) clearTimeout(suggestTimeoutRef.current);
+    if (!query.trim()) { setNameSuggestions([]); setShowSuggestions(false); return; }
+    suggestTimeoutRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/products?search=${encodeURIComponent(query)}&limit=8&sort=name&dir=asc`, { credentials: 'include' });
+        if (!res.ok) return;
+        const data = await res.json();
+        setNameSuggestions(data.products ?? []);
+        setShowSuggestions((data.products ?? []).length > 0);
+      } catch { /* silent */ }
+    }, 250);
+  }, []);
+
+  // ── Sort ──────────────────────────────────────────────────────────────────
   const toggleSort = (key: SortKey) => {
-    if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    setPage(1);
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortKey(key); setSortDir('asc'); }
   };
 
-  const toggleRow = (id: string) => {
-    setSelectedRows(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+  // ── Form helpers ──────────────────────────────────────────────────────────
+  const setField = (key: keyof FormState, value: string) => {
+    setForm(prev => ({ ...prev, [key]: value }));
+    if (formErrors[key]) setFormErrors(prev => ({ ...prev, [key]: undefined }));
+    setApiError('');
   };
 
-  const toggleAll = () => {
-    if (selectedRows.size === filtered.length) setSelectedRows(new Set());
-    else setSelectedRows(new Set(filtered.map(p => p.id)));
+  const validateForm = (): boolean => {
+    const errors: Partial<Record<keyof FormState, string>> = {};
+    if (!form.name.trim()) errors.name = 'Product name is required.';
+    const qty = Number(form.quantity);
+    if (!form.quantity || isNaN(qty) || qty < 1) errors.quantity = 'Enter a valid quantity (≥ 1).';
+    const price = Number(form.price);
+    if (!form.price || isNaN(price) || price < 0) errors.price = 'Enter a valid price.';
+    if (form.skuMode === 'manual' && !form.sku.trim()) errors.sku = 'Enter a SKU or switch to Auto.';
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
-  const totalActive = productsData.filter(p => p.status === 'Active').length;
-  const lowStock = productsData.filter(p => p.stockQty > 0 && p.stockQty <= p.threshold).length;
-  const outOfStock = productsData.filter(p => p.stockQty === 0).length;
-  const totalValue = productsData.reduce((sum, p) => sum + p.unitPrice * p.stockQty, 0);
+  // ── Add product ───────────────────────────────────────────────────────────
+  const handleAddProduct = useCallback(async () => {
+    if (!validateForm()) return;
+    setIsSubmitting(true);
+    setApiError('');
+    try {
+      const res = await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          shopId,
+          name:        form.name.trim(),
+          description: form.description.trim(),
+          price:       Number(form.price),
+          quantity:    Number(form.quantity),
+          sku:         form.skuMode === 'manual' ? form.sku.trim() : '',
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) { setApiError(body.error ?? 'Failed to create product.'); return; }
+      setForm(EMPTY_FORM);
+      setFormErrors({});
+      setNameSuggestions([]);
+      setShowSuggestions(false);
+      setPrintTarget({
+        productId:       body.product._id,
+        productName:     body.product.name,
+        sku:             body.product.sku,
+        qty:             Number(form.quantity),
+        totalQty:        body.product.totalQty,
+        price:           body.product.price,
+        barcodePrintUrl: body.barcodePrintUrl ?? `/api/products/${body.product._id}/barcodes`,
+        restocked:       body.restocked ?? false,
+      });
+      setPage(1); setSortKey('createdAt'); setSortDir('desc');
+      fetchProducts();
+    } catch { setApiError('Network error. Please try again.'); }
+    finally { setIsSubmitting(false); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form, fetchProducts, shopId]);
+
+  // ── Edit ──────────────────────────────────────────────────────────────────
+  const openEdit = (p: Product) => {
+    setEditTarget(p);
+    setEditState({ name: p.name, price: String(p.price), totalQty: String(p.totalQty), availableQty: String(p.availableQty), description: p.description, sku: p.sku });
+    setEditErrors({});
+    setEditApiError('');
+  };
+
+  const validateEdit = (): boolean => {
+    const errors: Partial<Record<keyof EditState, string>> = {};
+    if (!editState.name.trim()) errors.name = 'Required.';
+    const p = Number(editState.price);
+    if (isNaN(p) || p < 0) errors.price = 'Invalid price.';
+    const tq = Number(editState.totalQty);
+    if (isNaN(tq) || tq < 0) errors.totalQty = 'Invalid.';
+    const aq = Number(editState.availableQty);
+    if (isNaN(aq) || aq < 0 || aq > tq) errors.availableQty = 'Must be ≤ total qty.';
+    setEditErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editTarget || !validateEdit()) return;
+    setIsSavingEdit(true);
+    setEditApiError('');
+    try {
+      const res = await fetch(`/api/products/${editTarget._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ name: editState.name.trim(), description: editState.description.trim(), price: Number(editState.price), totalQty: Number(editState.totalQty), availableQty: Number(editState.availableQty), sku: editState.sku.trim() }),
+      });
+      const body = await res.json();
+      if (!res.ok) { setEditApiError(body.error ?? 'Failed to update product.'); return; }
+      setProducts(prev => prev.map(p => p._id === editTarget._id ? { ...p, ...body.product } : p));
+      fetchProducts();
+      setEditTarget(null);
+    } catch { setEditApiError('Network error. Please try again.'); }
+    finally { setIsSavingEdit(false); }
+  };
+
+  // ── Delete ────────────────────────────────────────────────────────────────
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/products/${deleteTarget._id}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) { const body = await res.json().catch(() => ({})); alert(body.error ?? 'Failed to delete product.'); return; }
+      setDeleteTarget(null);
+      const newCount = totalCount - 1;
+      const newPages = Math.max(1, Math.ceil(newCount / PAGE_SIZE));
+      if (page > newPages) setPage(newPages); else fetchProducts();
+    } catch { alert('Network error. Please try again.'); }
+    finally { setIsDeleting(false); }
+  };
+
+  const safePage = Math.min(page, Math.max(1, totalPages));
 
   const SortIcon = ({ col }: { col: SortKey }) => (
     <span className="ml-1 inline-flex flex-col gap-0">
-      <Icon name="ChevronUpIcon" size={10} className={sortKey === col && sortDir === 'asc' ? 'text-emerald-600' : 'text-slate-300'} />
+      <Icon name="ChevronUpIcon"   size={10} className={sortKey === col && sortDir === 'asc'  ? 'text-emerald-600' : 'text-slate-300'} />
       <Icon name="ChevronDownIcon" size={10} className={sortKey === col && sortDir === 'desc' ? 'text-emerald-600' : 'text-slate-300'} />
     </span>
   );
 
+  const outOfStock    = useMemo(() => products.filter(p => p.availableQty === 0).length, [products]);
+  const lowStockCount = useMemo(() => products.filter(p => p.availableQty > 0 && p.availableQty / (p.totalQty || 1) < 0.2).length, [products]);
+  const fmtValue = (n: number) => n >= 1_000_000 ? `₹${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `₹${(n / 1_000).toFixed(1)}k` : `₹${n.toFixed(2)}`;
+
   return (
     <ShopAdminLayout activeRoute="/shop-admin/products">
       <div className="space-y-6 animate-fade-in">
+
         {/* Page Header */}
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 mb-0.5">
               <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Products</h1>
-              <span className="text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">Lekki Branch</span>
+              <span className="text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">{shopName}</span>
             </div>
-            <p className="text-sm text-slate-500">Manage products available at your shop</p>
+            <p className="text-sm text-slate-500">Add and manage products at your shop</p>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl shadow-sm transition-all duration-150">
-            <Icon name="PlusIcon" size={16} className="text-white" />
-            Add Product
-          </button>
         </div>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">My Products</span>
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
-                <Icon name="CubeIcon" size={16} className="text-emerald-600" />
+          {[
+            { label: 'My Products',  value: stats.totalProducts,                 icon: 'CubeIcon',                  color: 'emerald', cls: 'text-slate-800',  sub: 'In this shop'        },
+            { label: 'Low Stock',    value: lowStockCount,                        icon: 'ExclamationTriangleIcon',   color: 'amber',   cls: 'text-amber-600', sub: 'Below threshold'     },
+            { label: 'Out of Stock', value: outOfStock,                           icon: 'XCircleIcon',               color: 'red',     cls: 'text-red-600',   sub: 'Needs restocking'    },
+            { label: 'Stock Value',  value: fmtValue(stats.catalogValue),         icon: 'CurrencyRupeeIcon',         color: 'emerald', cls: 'text-slate-800',  sub: 'Current stock value' },
+          ].map(card => (
+            <div key={card.label} className="bg-white rounded-2xl border border-slate-100 shadow-card p-5">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">{card.label}</span>
+                <div className={`w-8 h-8 rounded-lg bg-${card.color}-50 flex items-center justify-center`}>
+                  <Icon name={card.icon} size={16} className={`text-${card.color}-600`} />
+                </div>
               </div>
+              {isLoading
+                ? <div className="h-8 w-16 bg-slate-100 rounded animate-pulse mb-1" />
+                : <p className={`text-3xl font-bold ${card.cls}`}>{card.value}</p>
+              }
+              <p className="text-xs text-slate-400 mt-1">{card.sub}</p>
             </div>
-            <p className="text-3xl font-bold text-slate-800">{productsData.length}</p>
-            <p className="text-xs text-slate-400 mt-1">{totalActive} active</p>
+          ))}
+        </div>
+
+        {/* Add Product Form */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-card overflow-hidden">
+          <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100 bg-slate-50/60">
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+              <Icon name="PlusCircleIcon" size={17} className="text-emerald-600" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800">Add New Product</h2>
+              <p className="text-xs text-slate-400">Fill in the details below — product will be added to <span className="font-semibold text-emerald-600">{shopName}</span></p>
+            </div>
           </div>
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Low Stock</span>
-              <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
-                <Icon name="ExclamationTriangleIcon" size={16} className="text-amber-600" />
+
+          <div className="px-6 py-5">
+            {apiError && (
+              <div className="mb-4 flex items-center gap-2.5 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm font-medium text-red-700">
+                <Icon name="ExclamationCircleIcon" size={16} className="text-red-500 shrink-0" />{apiError}
+              </div>
+            )}
+
+            {/* Row 1: Name, Price, Quantity */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+              {/* Name with autocomplete */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Product Name <span className="text-red-500">*</span></label>
+                <div className="relative">
+                  <input ref={nameInputRef} type="text" placeholder="e.g. Samsung 55″ QLED TV" value={form.name} autoComplete="off"
+                    onChange={e => { setField('name', e.target.value); fetchNameSuggestions(e.target.value); }}
+                    onFocus={() => { if (nameSuggestions.length > 0) setShowSuggestions(true); }}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                    className={`${inputBase} ${formErrors.name ? 'border-red-300 focus:border-red-400' : ''}`} />
+                  {showSuggestions && nameSuggestions.length > 0 && (
+                    <ul className="absolute z-30 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-56 overflow-y-auto">
+                      {nameSuggestions.map(s => (
+                        <li key={s._id}
+                          onMouseDown={() => {
+                            setField('name', s.name);
+                            if (s.description) setField('description', s.description);
+                            setField('price', String(s.price));
+                            setShowSuggestions(false); setNameSuggestions([]);
+                            setTimeout(() => quantityInputRef.current?.focus(), 50);
+                          }}
+                          className="flex items-center justify-between px-4 py-2.5 hover:bg-emerald-50 cursor-pointer group transition-colors">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-800 group-hover:text-emerald-700 truncate">{s.name}</p>
+                            <p className="text-xs text-slate-400 font-mono">{s.sku}</p>
+                          </div>
+                          <div className="text-right shrink-0 ml-4">
+                            <p className="text-xs font-semibold text-slate-600">₹{s.price.toFixed(2)}</p>
+                            <p className="text-[10px] text-slate-400">{s.totalQty} in stock</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                {formErrors.name && <p className="mt-1 text-[11px] text-red-500">{formErrors.name}</p>}
+              </div>
+
+              {/* Price */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Unit Price (₹) <span className="text-red-500">*</span></label>
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={form.price}
+                  onChange={e => setField('price', e.target.value)}
+                  className={`${inputBase} ${formErrors.price ? 'border-red-300 focus:border-red-400' : ''}`} />
+                {formErrors.price && <p className="mt-1 text-[11px] text-red-500">{formErrors.price}</p>}
+              </div>
+
+              {/* Quantity */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Quantity (units) <span className="text-red-500">*</span></label>
+                <input ref={quantityInputRef} type="number" min="1" step="1" placeholder="e.g. 100" value={form.quantity}
+                  onChange={e => setField('quantity', e.target.value)}
+                  className={`${inputBase} ${formErrors.quantity ? 'border-red-300 focus:border-red-400' : ''}`} />
+                {formErrors.quantity && <p className="mt-1 text-[11px] text-red-500">{formErrors.quantity}</p>}
               </div>
             </div>
-            <p className="text-3xl font-bold text-slate-800">{lowStock}</p>
-            <p className="text-xs text-slate-400 mt-1">Below threshold</p>
-          </div>
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Out of Stock</span>
-              <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center">
-                <Icon name="XCircleIcon" size={16} className="text-red-500" />
+
+            {/* Row 2: Description, SKU */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Description</label>
+                <textarea rows={2} placeholder="Optional — size, colour, variant details…" value={form.description}
+                  onChange={e => setField('description', e.target.value)}
+                  className={`${inputBase} resize-none`} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  SKU Code
+                  <span className="ml-2 inline-flex rounded-lg overflow-hidden border border-slate-200 text-[10px] font-semibold">
+                    <button type="button" onClick={() => setField('skuMode', 'auto')}
+                      className={`px-2 py-0.5 transition-colors ${form.skuMode === 'auto' ? 'bg-emerald-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>Auto</button>
+                    <button type="button" onClick={() => setField('skuMode', 'manual')}
+                      className={`px-2 py-0.5 transition-colors ${form.skuMode === 'manual' ? 'bg-emerald-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>Manual</button>
+                  </span>
+                </label>
+                {form.skuMode === 'auto' ? (
+                  <div className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-400 font-mono select-none">Auto-generated on save</div>
+                ) : (
+                  <>
+                    <input type="text" placeholder="e.g. MY-SKU-0042" value={form.sku}
+                      onChange={e => setField('sku', e.target.value.toUpperCase())}
+                      className={`${inputBase} font-mono ${formErrors.sku ? 'border-red-300 focus:border-red-400' : ''}`} />
+                    {formErrors.sku && <p className="mt-1 text-[11px] text-red-500">{formErrors.sku}</p>}
+                  </>
+                )}
               </div>
             </div>
-            <p className="text-3xl font-bold text-slate-800">{outOfStock}</p>
-            <p className="text-xs text-slate-400 mt-1">Needs restocking</p>
-          </div>
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Stock Value</span>
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
-                <Icon name="CurrencyDollarIcon" size={16} className="text-emerald-600" />
-              </div>
+
+            {/* Submit row */}
+            <div className="flex items-center gap-3">
+              <button onClick={handleAddProduct} disabled={isSubmitting}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-sm font-semibold rounded-xl shadow-sm transition-all">
+                {isSubmitting ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <Icon name="PlusIcon" size={16} className="text-white" />}
+                Add Product
+              </button>
+              <button type="button" onClick={() => { setForm(EMPTY_FORM); setFormErrors({}); setApiError(''); }}
+                className="px-4 py-2.5 text-sm font-medium text-slate-500 hover:text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 transition-all">
+                Clear
+              </button>
+              <p className="text-xs text-slate-400 ml-1">Product is locked to your shop only.</p>
             </div>
-            <p className="text-3xl font-bold text-slate-800">₹{(totalValue / 1000).toFixed(1)}k</p>
-            <p className="text-xs text-slate-400 mt-1">Current stock value</p>
           </div>
         </div>
 
-        {/* Products Table */}
+        {/* Product List */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-card overflow-hidden">
-          {/* Filters */}
           <div className="flex flex-wrap items-center gap-3 px-5 py-4 border-b border-slate-100">
             <div className="flex-1 min-w-0">
               <h3 className="text-base font-semibold text-slate-800">Product List</h3>
-              <p className="text-xs text-slate-400 mt-0.5">{filtered.length} products found</p>
+              <p className="text-xs text-slate-400 mt-0.5">{isLoading ? 'Loading…' : `${totalCount} product${totalCount !== 1 ? 's' : ''} found`}</p>
             </div>
-            <div className="relative w-56">
-              <Icon name="MagnifyingGlassIcon" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search name, SKU, brand…"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="w-full pl-8 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all"
-              />
+            <div className="relative w-60">
+              <Icon name="MagnifyingGlassIcon" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input type="text" placeholder="Search name or SKU…" value={search} onChange={e => setSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all" />
+              {search && (
+                <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <Icon name="XMarkIcon" size={13} />
+                </button>
+              )}
             </div>
-            <select
-              value={categoryFilter}
-              onChange={e => setCategoryFilter(e.target.value)}
-              className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all"
-            >
-              {categories.map(c => <option key={c} value={c}>{c === 'All' ? 'All Categories' : c}</option>)}
-            </select>
-            <select
-              value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value as ProductStatus | 'All')}
-              className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all"
-            >
-              <option value="All">All Statuses</option>
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-              <option value="Discontinued">Discontinued</option>
-            </select>
-            <button className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg bg-slate-50 hover:bg-slate-100 transition-all">
-              <Icon name="ArrowDownTrayIcon" size={13} className="text-slate-400" />
-              Export
+            <button onClick={() => fetchProducts()} disabled={isLoading}
+              className="p-2 rounded-lg border border-slate-200 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-all disabled:opacity-40" title="Refresh">
+              <Icon name="ArrowPathIcon" size={15} className={isLoading ? 'animate-spin' : ''} />
             </button>
           </div>
 
-          {/* Bulk action bar */}
-          {selectedRows.size > 0 && (
-            <div className="flex items-center gap-3 px-5 py-2.5 bg-emerald-50 border-b border-emerald-100">
-              <span className="text-xs font-semibold text-emerald-700">{selectedRows.size} selected</span>
-              <div className="flex items-center gap-2 ml-auto">
-                <button className="text-xs font-medium text-emerald-600 hover:text-emerald-700 px-3 py-1.5 rounded-lg hover:bg-emerald-100 transition-all flex items-center gap-1.5">
-                  <Icon name="PencilSquareIcon" size={12} />
-                  Bulk Edit
-                </button>
-                <button className="text-xs font-medium text-red-600 hover:text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-all flex items-center gap-1.5">
-                  <Icon name="TrashIcon" size={12} />
-                  Delete
-                </button>
-                <button onClick={() => setSelectedRows(new Set())} className="text-xs text-slate-400 hover:text-slate-600 ml-2">
-                  <Icon name="XMarkIcon" size={14} />
-                </button>
-              </div>
+          {loadError && (
+            <div className="flex items-center gap-2.5 px-5 py-3 bg-red-50 border-b border-red-100 text-sm text-red-700">
+              <Icon name="ExclamationCircleIcon" size={15} className="text-red-500 shrink-0" />{loadError}
+              <button onClick={fetchProducts} className="ml-auto text-xs font-semibold underline">Retry</button>
             </div>
           )}
 
-          {/* Table */}
           <div className="overflow-x-auto scrollbar-thin">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className="w-10 pl-5 pr-3 py-3 text-left">
-                    <input
-                      type="checkbox"
-                      checked={selectedRows.size === filtered.length && filtered.length > 0}
-                      onChange={toggleAll}
-                      className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/30"
-                    />
-                  </th>
                   {([
-                    { key: 'sku', label: 'SKU', sortable: false },
-                    { key: 'name', label: 'Product Name', sortable: true },
-                    { key: 'category', label: 'Category', sortable: true },
-                    { key: 'brand', label: 'Brand', sortable: false },
-                    { key: 'unitPrice', label: 'Unit Price', sortable: true },
-                    { key: 'stockQty', label: 'Stock Qty', sortable: true },
-                    { key: 'threshold', label: 'Threshold', sortable: false },
-                    { key: 'status', label: 'Status', sortable: true },
-                    { key: 'actions', label: '', sortable: false },
+                    { key: 'sku',          label: 'SKU',          sortable: false },
+                    { key: 'name',         label: 'Product Name', sortable: true  },
+                    { key: 'price',        label: 'Price',        sortable: true  },
+                    { key: 'totalQty',     label: 'Total Qty',    sortable: true  },
+                    { key: 'availableQty', label: 'Available Qty',sortable: true  },
+                    { key: 'createdAt',    label: 'Added',        sortable: true  },
+                    { key: 'actions',      label: '',             sortable: false },
                   ] as { key: string; label: string; sortable: boolean }[]).map(col => (
-                    <th
-                      key={`th-${col.key}`}
+                    <th key={`th-${col.key}`}
                       onClick={col.sortable ? () => toggleSort(col.key as SortKey) : undefined}
-                      className={`px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-400 whitespace-nowrap ${col.sortable ? 'cursor-pointer hover:text-slate-600 select-none' : ''} ${col.key === 'name' ? 'min-w-[220px]' : ''}`}
-                    >
+                      className={`px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-400 whitespace-nowrap ${col.sortable ? 'cursor-pointer hover:text-slate-600 select-none' : ''} ${col.key === 'sku' ? 'pl-5' : ''} ${col.key === 'name' ? 'min-w-[200px]' : ''}`}>
                       <span className="inline-flex items-center gap-1">
                         {col.label}
                         {col.sortable && <SortIcon col={col.key as SortKey} />}
@@ -258,88 +514,252 @@ export default function ShopAdminProductsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {filtered.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="py-16 text-center">
-                      <div className="flex flex-col items-center gap-3">
-                        <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center">
-                          <Icon name="CubeIcon" size={22} className="text-slate-400" />
-                        </div>
-                        <p className="text-sm font-medium text-slate-500">No products found</p>
-                        <p className="text-xs text-slate-400">Try adjusting your search or filters</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  filtered.map(product => (
-                    <tr key={product.id} className={`hover:bg-slate-50/60 transition-colors ${selectedRows.has(product.id) ? 'bg-emerald-50/40' : ''}`}>
-                      <td className="pl-5 pr-3 py-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedRows.has(product.id)}
-                          onChange={() => toggleRow(product.id)}
-                          className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/30"
-                        />
-                      </td>
-                      <td className="px-3 py-3">
-                        <span className="text-xs font-mono text-slate-400">{product.sku}</span>
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
-                            <Icon name="CubeIcon" size={14} className="text-emerald-500" />
-                          </div>
-                          <span className="text-sm font-medium text-slate-700 truncate max-w-[200px]">{product.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-3">
-                        <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{product.category}</span>
-                      </td>
-                      <td className="px-3 py-3 text-xs text-slate-500">{product.brand}</td>
-                      <td className="px-3 py-3 text-sm font-semibold text-slate-700">₹{product.unitPrice.toFixed(2)}</td>
-                      <td className="px-3 py-3">
-                        <span className={`text-sm font-semibold ${product.stockQty === 0 ? 'text-red-600' : product.stockQty <= product.threshold ? 'text-amber-600' : 'text-slate-700'}`}>
-                          {product.stockQty}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3 text-xs text-slate-400">{product.threshold}</td>
-                      <td className="px-3 py-3">
-                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${statusConfig[product.status].className}`}>
-                          {product.status}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex items-center gap-1">
-                          <button className="p-1.5 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-all" title="Edit product">
-                            <Icon name="PencilSquareIcon" size={14} />
-                          </button>
-                          <button className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-all" title="Delete product">
-                            <Icon name="TrashIcon" size={14} />
-                          </button>
-                        </div>
-                      </td>
+                {isLoading ? (
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <tr key={`sk-${i}`} className="animate-pulse">
+                      {Array.from({ length: 7 }).map((__, j) => (
+                        <td key={j} className="px-4 py-3"><div className="h-3 bg-slate-100 rounded w-full max-w-[120px]" /></td>
+                      ))}
                     </tr>
                   ))
+                ) : products.length === 0 ? (
+                  <tr><td colSpan={7} className="py-16 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center">
+                        <Icon name="CubeIcon" size={22} className="text-slate-400" />
+                      </div>
+                      <p className="text-sm font-medium text-slate-500">No products found</p>
+                      <p className="text-xs text-slate-400">{search ? 'Try a different search term.' : 'Add your first product using the form above.'}</p>
+                    </div>
+                  </td></tr>
+                ) : (
+                  products.map(product => {
+                    const stockPct  = product.totalQty > 0 ? product.availableQty / product.totalQty : 0;
+                    const stockColor = product.availableQty === 0 ? 'text-red-600' : stockPct < 0.2 ? 'text-amber-600' : 'text-emerald-600';
+                    return (
+                      <tr key={product._id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="pl-5 pr-4 py-3">
+                          <span className="text-[11px] font-mono text-slate-400">{product.sku}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                              <Icon name="CubeIcon" size={14} className="text-emerald-500" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-slate-700 truncate max-w-[240px]">{product.name}</p>
+                              {product.description && <p className="text-[11px] text-slate-400 truncate max-w-[240px]">{product.description}</p>}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm font-semibold text-slate-700 whitespace-nowrap">₹{product.price.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-slate-700 tabular-nums">{product.totalQty.toLocaleString()}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-sm font-semibold tabular-nums ${stockColor}`}>{product.availableQty.toLocaleString()}</span>
+                            {product.availableQty === 0 && <span className="text-[10px] font-semibold bg-red-50 text-red-600 border border-red-200 px-1.5 py-0.5 rounded-full">Out</span>}
+                            {product.availableQty > 0 && stockPct < 0.2 && <span className="text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-1.5 py-0.5 rounded-full">Low</span>}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
+                          {new Date(product.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1 justify-end">
+                            <button onClick={() => openEdit(product)} className="p-1.5 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-all" title="Edit product">
+                              <Icon name="PencilSquareIcon" size={15} />
+                            </button>
+                            <button onClick={() => setPrintTarget({ productId: product._id, productName: product.name, sku: product.sku, qty: product.totalQty, totalQty: product.totalQty, price: product.price, barcodePrintUrl: `/api/products/${product._id}/barcodes`, restocked: false })}
+                              className="p-1.5 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-all" title="Print barcodes">
+                              <Icon name="PrinterIcon" size={15} />
+                            </button>
+                            <button onClick={() => setDeleteTarget(product)} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-all" title="Delete product">
+                              <Icon name="TrashIcon" size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
 
-          {/* Footer */}
+          {/* Pagination */}
           <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50/50">
-            <p className="text-xs text-slate-400">Showing {filtered.length} of {productsData.length} products</p>
+            <p className="text-xs text-slate-400">
+              Showing <span className="font-medium text-slate-600">{totalCount === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, totalCount)}</span> of <span className="font-medium text-slate-600">{totalCount.toLocaleString()}</span> products
+            </p>
             <div className="flex items-center gap-1">
-              <button className="px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-white transition-all disabled:opacity-40" disabled>
-                Previous
-              </button>
-              <span className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg">1</span>
-              <button className="px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-white transition-all disabled:opacity-40" disabled>
-                Next
-              </button>
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1 || isLoading}
+                className="px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-white transition-all disabled:opacity-40 disabled:cursor-not-allowed">Previous</button>
+              {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                let pg: number;
+                if (totalPages <= 7) pg = i + 1;
+                else if (safePage <= 4) pg = i + 1;
+                else if (safePage >= totalPages - 3) pg = totalPages - 6 + i;
+                else pg = safePage - 3 + i;
+                return (
+                  <button key={pg} onClick={() => setPage(pg)} disabled={isLoading}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-all ${safePage === pg ? 'bg-emerald-600 border-emerald-600 text-white' : 'text-slate-500 border-slate-200 hover:bg-white disabled:opacity-40'}`}>
+                    {pg}
+                  </button>
+                );
+              })}
+              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages || isLoading}
+                className="px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-white transition-all disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* ── Print Barcodes Modal ──────────────────────────────────────────────── */}
+      {printTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center">
+                  <Icon name="PrinterIcon" size={18} className="text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-slate-800">{printTarget.restocked ? 'Stock Updated — Print New Barcodes' : 'Product Added — Print Barcodes'}</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">{printTarget.restocked ? `Total stock is now ${printTarget.totalQty} units` : 'Ready to print barcode labels'}</p>
+                </div>
+              </div>
+              <button onClick={() => setPrintTarget(null)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600">
+                <Icon name="XMarkIcon" size={18} />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-1.5">
+                <p className="text-sm font-semibold text-slate-800">{printTarget.productName}</p>
+                <div className="flex items-center gap-4 text-xs text-slate-500">
+                  <span className="font-mono">{printTarget.sku}</span>
+                  <span>₹{printTarget.price.toFixed(2)}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                <Icon name="TagIcon" size={16} className="text-emerald-600 shrink-0" />
+                <p className="text-sm text-emerald-700">
+                  {printTarget.restocked
+                    ? <><span className="font-bold">{printTarget.qty}</span> new label{printTarget.qty !== 1 ? 's' : ''} for units just added.<br /><span className="text-emerald-500 text-xs">({printTarget.totalQty} total units in stock)</span></>
+                    : <><span className="font-bold">{printTarget.qty}</span> barcode label{printTarget.qty !== 1 ? 's' : ''} will be generated — one per unit.</>}
+                </p>
+              </div>
+              <p className="text-xs text-slate-400">Each label contains a unique Code 128 barcode. Stick one on each physical product unit. Sized for 2″×1″ thermal paper.</p>
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
+              <button onClick={() => setPrintTarget(null)} className="px-4 py-2 text-sm font-medium text-slate-500 border border-slate-200 rounded-xl hover:bg-white transition-all">Print Later</button>
+              <button onClick={() => { window.open(printTarget.barcodePrintUrl, '_blank'); }}
+                className="inline-flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-all">
+                <Icon name="PrinterIcon" size={15} className="text-white" />
+                Print {printTarget.qty} New Label{printTarget.qty !== 1 ? 's' : ''}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Modal ────────────────────────────────────────────────────────── */}
+      {editTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-semibold text-slate-800">Edit Product</h3>
+                <p className="text-xs text-slate-400 font-mono mt-0.5">{editTarget.sku}</p>
+              </div>
+              <button onClick={() => setEditTarget(null)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all">
+                <Icon name="XMarkIcon" size={18} />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              {editApiError && (
+                <div className="flex items-center gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+                  <Icon name="ExclamationCircleIcon" size={14} className="text-red-500 shrink-0" />{editApiError}
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Product Name <span className="text-red-500">*</span></label>
+                <input type="text" value={editState.name} onChange={e => setEditState(s => ({ ...s, name: e.target.value }))}
+                  className={`${inputBase} ${editErrors.name ? 'border-red-300' : ''}`} />
+                {editErrors.name && <p className="mt-1 text-[11px] text-red-500">{editErrors.name}</p>}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Price (₹) <span className="text-red-500">*</span></label>
+                  <input type="number" min="0" step="0.01" value={editState.price} onChange={e => setEditState(s => ({ ...s, price: e.target.value }))}
+                    className={`${inputBase} ${editErrors.price ? 'border-red-300' : ''}`} />
+                  {editErrors.price && <p className="mt-1 text-[11px] text-red-500">{editErrors.price}</p>}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">SKU Code</label>
+                  <input type="text" value={editState.sku} onChange={e => setEditState(s => ({ ...s, sku: e.target.value.toUpperCase() }))}
+                    className={`${inputBase} font-mono`} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Total Quantity <span className="text-red-500">*</span></label>
+                  <input type="number" min="0" step="1" value={editState.totalQty} onChange={e => setEditState(s => ({ ...s, totalQty: e.target.value }))}
+                    className={`${inputBase} ${editErrors.totalQty ? 'border-red-300' : ''}`} />
+                  {editErrors.totalQty && <p className="mt-1 text-[11px] text-red-500">{editErrors.totalQty}</p>}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Available Qty <span className="text-red-500">*</span></label>
+                  <input type="number" min="0" step="1" value={editState.availableQty} onChange={e => setEditState(s => ({ ...s, availableQty: e.target.value }))}
+                    className={`${inputBase} ${editErrors.availableQty ? 'border-red-300' : ''}`} />
+                  {editErrors.availableQty && <p className="mt-1 text-[11px] text-red-500">{editErrors.availableQty}</p>}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Description</label>
+                <textarea rows={2} value={editState.description} onChange={e => setEditState(s => ({ ...s, description: e.target.value }))}
+                  className={`${inputBase} resize-none`} />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
+              <button onClick={() => setEditTarget(null)} disabled={isSavingEdit}
+                className="px-4 py-2 text-sm font-medium text-slate-500 border border-slate-200 rounded-xl hover:bg-white transition-all">Cancel</button>
+              <button onClick={handleSaveEdit} disabled={isSavingEdit}
+                className="inline-flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-sm font-semibold rounded-xl transition-all">
+                {isSavingEdit ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <Icon name="CheckIcon" size={15} className="text-white" />}
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Confirmation ───────────────────────────────────────────────── */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden">
+            <div className="px-6 py-6">
+              <div className="flex items-start gap-4">
+                <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center shrink-0 mt-0.5">
+                  <Icon name="ExclamationTriangleIcon" size={20} className="text-red-500" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-slate-800">Delete Product</h3>
+                  <p className="text-sm text-slate-500 mt-1">Are you sure you want to delete <span className="font-semibold text-slate-700">"{deleteTarget.name}"</span>? This cannot be undone.</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
+              <button onClick={() => setDeleteTarget(null)} disabled={isDeleting}
+                className="px-4 py-2 text-sm font-medium text-slate-500 border border-slate-200 rounded-xl hover:bg-white transition-all">Cancel</button>
+              <button onClick={handleConfirmDelete} disabled={isDeleting}
+                className="inline-flex items-center gap-2 px-5 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-semibold rounded-xl transition-all">
+                {isDeleting ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <Icon name="TrashIcon" size={15} className="text-white" />}
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </ShopAdminLayout>
   );
 }
