@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import LoginForm from './components/LoginForm';
 
 export default function LoginPage() {
@@ -9,7 +9,9 @@ export default function LoginPage() {
       {/* Right form panel */}
       <div className="flex-1 flex items-center justify-center bg-white px-6 py-12 lg:px-16">
         <div className="w-full max-w-md animate-fade-in">
-          <LoginForm />
+          <Suspense fallback={<div className="h-96 flex items-center justify-center text-slate-400 text-sm">Loading…</div>}>
+            <LoginForm />
+          </Suspense>
         </div>
       </div>
     </div>
