@@ -9,6 +9,9 @@ out/
 # Production build
 build/
 
+# HTTPS dev certificates (contains private key)
+certificates/
+
 # Logs
 npm-debug.log*
 yarn-debug.log*

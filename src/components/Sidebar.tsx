@@ -1,5 +1,5 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import AppLogo from '@/components/ui/AppLogo';
 import Icon from '@/components/ui/AppIcon';
@@ -12,11 +12,10 @@ interface NavItem {
   group?: string;
 }
 
-const navItems: NavItem[] = [
+const baseNavItems: NavItem[] = [
   { label: 'Dashboard', icon: 'HomeIcon', href: '/dashboard', group: 'main' },
-  { label: 'Products', icon: 'CubeIcon', href: '/dashboard/products', badge: 0, group: 'main' },
-  { label: 'Categories', icon: 'TagIcon', href: '/dashboard/categories', group: 'main' },
-  { label: 'Inventory', icon: 'ClipboardDocumentListIcon', href: '/dashboard/inventory', badge: 7, group: 'main' },
+  { label: 'Products', icon: 'CubeIcon', href: '/dashboard/products', group: 'main' },
+  { label: 'Inventory', icon: 'ClipboardDocumentListIcon', href: '/dashboard/inventory', group: 'main' },
   { label: 'Shops', icon: 'BuildingStorefrontIcon', href: '/shops', group: 'main' },
   { label: 'Users', icon: 'UsersIcon', href: '/users', group: 'admin' },
   { label: 'Reports', icon: 'ChartBarIcon', href: '/reports', group: 'admin' },
@@ -28,7 +27,32 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ activeRoute = '/dashboard' }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window !== 'undefined') return window.innerWidth < 768;
+    return false;
+  });
+  const [inventoryCount, setInventoryCount] = useState<number>(0);
+
+  useEffect(() => {
+    function handleResize() {
+      if (window.innerWidth < 768) setCollapsed(true);
+    }
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/inventory?limit=1')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.pagination?.total !== undefined) setInventoryCount(data.pagination.total); })
+      .catch(() => {});
+  }, []);
+
+  const navItems = baseNavItems.map(item =>
+    item.href === '/dashboard/inventory'
+      ? { ...item, badge: inventoryCount }
+      : item
+  );
 
   const mainItems = navItems.filter(i => i.group === 'main');
   const adminItems = navItems.filter(i => i.group === 'admin');
