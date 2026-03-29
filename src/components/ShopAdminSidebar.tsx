@@ -17,6 +17,7 @@ const BASE_NAV: NavItem[] = [
   { label: 'My Inventory', icon: 'ClipboardDocumentListIcon', href: '/shop-admin/inventory' },
   { label: 'Products', icon: 'CubeIcon', href: '/shop-admin/products' },
   { label: 'Billing', icon: 'ReceiptPercentIcon', href: '/shop-admin/billing' },
+  { label: 'Bills', icon: 'DocumentTextIcon', href: '/shop-admin/bills' },
   { label: 'Reports', icon: 'ChartBarIcon', href: '/shop-admin/reports' },
   { label: 'Settings', icon: 'Cog6ToothIcon', href: '/shop-admin/settings' },
 ];

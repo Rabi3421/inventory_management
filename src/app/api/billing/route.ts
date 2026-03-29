@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/db';
 import { ProductModel } from '@/lib/models/Product';
 import { InventoryLogModel } from '@/lib/models/InventoryLog';
+import { BillModel } from '@/lib/models/Bill';
 
 /**
  * POST /api/billing
@@ -29,6 +30,8 @@ export async function POST(request: NextRequest) {
     const performedBy = String(body.performedBy ?? 'shop-admin').trim();
     const note        = String(body.note ?? '').trim();
     const billNumber  = String(body.billNumber ?? `BILL-${Date.now()}`).trim();
+    const customerName  = String(body.customerName ?? '').trim();
+    const customerPhone = String(body.customerPhone ?? '').trim();
 
     if (!shopId) {
       return NextResponse.json({ error: 'shopId is required.' }, { status: 400 });
@@ -125,6 +128,20 @@ export async function POST(request: NextRequest) {
 
     const subtotal = receiptItems.reduce((s, i) => s + i.lineTotal, 0);
 
+    // Persist the bill as a permanent record
+    await BillModel.create({
+      billNumber,
+      shopId,
+      items: receiptItems,
+      subtotal,
+      total: subtotal,
+      customerName,
+      customerPhone,
+      performedBy,
+      note,
+      createdAt: now,
+    });
+
     return NextResponse.json(
       {
         receipt: {
@@ -135,6 +152,8 @@ export async function POST(request: NextRequest) {
           total: subtotal,     // extend here if you add tax/discount later
           performedBy,
           note,
+          customerName,
+          customerPhone,
           createdAt: now.toISOString(),
         },
       },

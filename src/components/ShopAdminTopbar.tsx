@@ -1,5 +1,6 @@
 'use client';
 import React, { useState } from 'react';
+import Link from 'next/link';
 import Icon from '@/components/ui/AppIcon';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -38,6 +39,15 @@ export default function ShopAdminTopbar() {
         />
       </div>
       <div className="flex items-center gap-1.5 sm:gap-2 ml-auto">
+        {/* New Bill CTA */}
+        <Link
+          href="/shop-admin/billing"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors shrink-0"
+        >
+          <Icon name="ReceiptPercentIcon" size={14} className="text-white" />
+          <span className="hidden sm:inline">New Bill</span>
+          <span className="sm:hidden">Bill</span>
+        </Link>
         {/* Shop indicator */}
         <div className="flex items-center gap-1 sm:gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2 sm:px-3 py-1 sm:py-1.5">
           <Icon name="BuildingStorefrontIcon" size={13} className="text-emerald-600" />
