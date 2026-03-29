@@ -1,25 +1,22 @@
 'use client';
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
 import Icon from '@/components/ui/AppIcon';
 
-type Role = 'admin' | 'superadmin';
+type Role = 'shopadmin' | 'superadmin';
 
 interface LoginFormData {
   email: string;
   password: string;
+  rememberMe: boolean;
 }
-
-const MOCK_CREDENTIALS = {
-  admin: { email: 'admin@shopinventory.io', password: 'ShopAdmin2026' },
-  superadmin: { email: 'super@shopinventory.io', password: 'SuperAdmin2026' },
-};
 
 export default function LoginForm() {
   const router = useRouter();
-  const [role, setRole] = useState<Role>('admin');
+  const searchParams = useSearchParams();
+  const [role, setRole] = useState<Role>('shopadmin');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState('');
@@ -34,21 +31,37 @@ export default function LoginForm() {
     setAuthError('');
     setIsLoading(true);
 
-    // Simulate auth delay — backend: POST /api/auth/login
-    await new Promise(r => setTimeout(r, 1200));
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          email: data.email,
+          password: data.password,
+          role,
+          rememberMe: data.rememberMe,
+          redirectTo: searchParams.get('next'),
+        }),
+      });
 
-    const creds = MOCK_CREDENTIALS[role];
-    if (data.email === creds.email && data.password === creds.password) {
-      router.push(role === 'admin' ? '/shop-admin/dashboard' : '/dashboard');
-    } else {
+      const result = await response.json();
+
+      if (!response.ok) {
+        setAuthError(result.error ?? 'Unable to sign you in.');
+        return;
+      }
+
+      router.push(result.redirectTo);
+      router.refresh();
+    } catch {
+      setAuthError('Unable to sign you in right now. Please try again.');
+    } finally {
       setIsLoading(false);
-      setAuthError(
-        `Invalid credentials. Try: ${creds.email} / ${creds.password}`
-      );
     }
   };
-
-  const creds = MOCK_CREDENTIALS[role];
 
   return (
     <div className="animate-slide-up">
@@ -69,7 +82,7 @@ export default function LoginForm() {
 
       {/* Role Toggle */}
       <div className="flex gap-1 p-1 bg-slate-100 rounded-xl mb-8">
-        {(['admin', 'superadmin'] as Role[]).map(r => (
+        {(['shopadmin', 'superadmin'] as Role[]).map(r => (
           <button
             key={`role-${r}`}
             type="button"
@@ -82,7 +95,7 @@ export default function LoginForm() {
               }
             `}
           >
-            {r === 'admin' ? 'Shop Admin' : 'Superadmin'}
+            {r === 'shopadmin' ? 'Shop Admin' : 'Superadmin'}
           </button>
         ))}
       </div>
@@ -112,7 +125,7 @@ export default function LoginForm() {
               id="email"
               type="email"
               autoComplete="email"
-              placeholder={creds.email}
+              placeholder={role === 'shopadmin' ? 'lekki@shopinventory.io' : 'super@shopinventory.io'}
               {...register('email', {
                 required: 'Email is required',
                 pattern: {
@@ -194,6 +207,7 @@ export default function LoginForm() {
           <input
             id="remember"
             type="checkbox"
+            {...register('rememberMe')}
             className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30"
           />
           <label htmlFor="remember" className="text-sm text-slate-600">
@@ -225,24 +239,23 @@ export default function LoginForm() {
           ) : (
             <>
               <Icon name="ArrowRightOnRectangleIcon" size={16} />
-              <span>Sign in as {role === 'admin' ? 'Shop Admin' : 'Superadmin'}</span>
+              <span>Sign in as {role === 'shopadmin' ? 'Shop Admin' : 'Superadmin'}</span>
             </>
           )}
         </button>
       </form>
 
-      {/* Demo credentials box */}
       <div className="mt-6 p-4 bg-indigo-50 border border-indigo-100 rounded-xl">
         <p className="text-xs font-semibold text-indigo-700 mb-2 flex items-center gap-1.5">
           <Icon name="InformationCircleIcon" size={14} className="text-indigo-500" />
-          Demo credentials — {role === 'admin' ? 'Shop Admin' : 'Superadmin'}
+          {role === 'shopadmin' ? 'Shop Admin' : 'Superadmin'} credentials
         </p>
         <div className="space-y-1">
           <p className="text-xs text-indigo-600 font-mono">
-            Email: <span className="font-semibold">{creds.email}</span>
+            Email: <span className="font-semibold">{role === 'shopadmin' ? 'lekki@shopinventory.io' : 'super@shopinventory.io'}</span>
           </p>
           <p className="text-xs text-indigo-600 font-mono">
-            Password: <span className="font-semibold">{creds.password}</span>
+            Password: <span className="font-semibold">{role === 'shopadmin' ? 'ShopAdmin2026!' : 'SuperAdmin2026!'}</span>
           </p>
         </div>
       </div>

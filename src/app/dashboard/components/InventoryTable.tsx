@@ -1,200 +1,202 @@
 'use client';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import Icon from '@/components/ui/AppIcon';
 
 type StockStatus = 'In Stock' | 'Low Stock' | 'Out of Stock' | 'Reorder Pending';
 
 interface InventoryItem {
-  id: string;
-  barcode: string;
-  productName: string;
-  category: string;
-  quantity: number;
-  threshold: number;
-  shop: string;
-  unitCost: number;
-  lastUpdated: string;
-  status: StockStatus;
+  _id:          string;
+  sku:          string;
+  name:         string;
+  price:        number;
+  totalQty:     number;
+  availableQty: number;
+  stockValue:   number;
+  stockStatus:  string;
+  lastMovedAt:  string;
+  totalIn:      number;
+  totalOut:     number;
+  movementCount:number;
 }
 
-const inventoryData: InventoryItem[] = [
-  { id: 'inv-001', barcode: 'SKU-7829341', productName: 'Samsung 55" QLED TV (QN55Q80C)', category: 'Electronics', quantity: 2, threshold: 10, shop: 'Ajah', unitCost: 850, lastUpdated: '2026-03-26', status: 'Low Stock' },
-  { id: 'inv-002', barcode: 'SKU-4412087', productName: 'Nike Air Max 270 — Men\'s Sz 42', category: 'Apparel', quantity: 0, threshold: 15, shop: 'Lekki', unitCost: 120, lastUpdated: '2026-03-25', status: 'Out of Stock' },
-  { id: 'inv-003', barcode: 'SKU-9934512', productName: 'Indomie Noodles 70g Chicken (Carton)', category: 'Food & Bev', quantity: 4, threshold: 20, shop: 'Surulere', unitCost: 18, lastUpdated: '2026-03-26', status: 'Low Stock' },
-  { id: 'inv-004', barcode: 'SKU-2281934', productName: 'Hisense 1.5HP Split AC R410A', category: 'Electronics', quantity: 47, threshold: 5, shop: 'Ikeja', unitCost: 620, lastUpdated: '2026-03-24', status: 'In Stock' },
-  { id: 'inv-005', barcode: 'SKU-6671209', productName: 'Nestlé Milo 900g Tin', category: 'Food & Bev', quantity: 183, threshold: 30, shop: 'Yaba', unitCost: 9, lastUpdated: '2026-03-26', status: 'In Stock' },
-  { id: 'inv-006', barcode: 'SKU-3341827', productName: 'iPhone 15 Pro Silicone Case', category: 'Electronics', quantity: 0, threshold: 8, shop: 'Yaba', unitCost: 35, lastUpdated: '2026-03-25', status: 'Out of Stock' },
-  { id: 'inv-007', barcode: 'SKU-8812944', productName: 'Adidas Tiro 23 Training Shorts', category: 'Apparel', quantity: 64, threshold: 20, shop: 'VI', unitCost: 45, lastUpdated: '2026-03-23', status: 'In Stock' },
-  { id: 'inv-008', barcode: 'SKU-1120438', productName: 'Dettol Antiseptic Liquid 1L', category: 'Health & Beauty', quantity: 6, threshold: 25, shop: 'Lekki', unitCost: 7, lastUpdated: '2026-03-26', status: 'Reorder Pending' },
-  { id: 'inv-009', barcode: 'SKU-5569201', productName: 'Bosch Cordless Drill GSB 18V-55', category: 'Home & Garden', quantity: 18, threshold: 5, shop: 'Ikeja', unitCost: 210, lastUpdated: '2026-03-22', status: 'In Stock' },
-  { id: 'inv-010', barcode: 'SKU-7734189', productName: 'Wilson Ultra 100 Tennis Racket', category: 'Sporting Goods', quantity: 3, threshold: 8, shop: 'VI', unitCost: 95, lastUpdated: '2026-03-26', status: 'Low Stock' },
-  { id: 'inv-011', barcode: 'SKU-4489023', productName: 'LG 32" Full HD Monitor 32MN500M', category: 'Electronics', quantity: 29, threshold: 8, shop: 'Ajah', unitCost: 280, lastUpdated: '2026-03-25', status: 'In Stock' },
-  { id: 'inv-012', barcode: 'SKU-9901234', productName: 'Nivea Men Deep Impact Deodorant 150ml', category: 'Health & Beauty', quantity: 88, threshold: 40, shop: 'Surulere', unitCost: 4, lastUpdated: '2026-03-24', status: 'In Stock' },
-];
+interface Pagination {
+  page:       number;
+  limit:      number;
+  total:      number;
+  totalPages: number;
+}
 
-const statusConfig: Record<StockStatus, { label: string; className: string }> = {
-  'In Stock': { label: 'In Stock', className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
-  'Low Stock': { label: 'Low Stock', className: 'bg-amber-50 text-amber-700 border border-amber-200' },
-  'Out of Stock': { label: 'Out of Stock', className: 'bg-red-50 text-red-700 border border-red-200' },
-  'Reorder Pending': { label: 'Reorder Pending', className: 'bg-blue-50 text-blue-700 border border-blue-200' },
+const statusConfig: Record<string, { label: string; className: string }> = {
+  'in-stock':  { label: 'In Stock',       className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
+  'low-stock': { label: 'Low Stock',      className: 'bg-amber-50 text-amber-700 border border-amber-200'       },
+  'out-of-stock': { label: 'Out of Stock',className: 'bg-red-50 text-red-700 border border-red-200'             },
 };
 
-type SortKey = keyof Pick<InventoryItem, 'productName' | 'category' | 'quantity' | 'shop' | 'status' | 'lastUpdated'>;
-type SortDir = 'asc' | 'desc';
+const ITEMS_OPTIONS = [10, 25, 50];
+type SortKey = 'name' | 'price' | 'totalQty' | 'availableQty' | 'createdAt';
 
-const ITEMS_PER_PAGE_OPTIONS = [10, 25, 50];
+function TableSkeleton({ rows = 8 }: { rows?: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, i) => (
+        <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}>
+          <td className="pl-5 pr-3 py-3"><div className="w-4 h-4 bg-slate-100 rounded animate-pulse" /></td>
+          <td className="px-3 py-3"><div className="h-4 bg-slate-100 rounded w-24 animate-pulse" /></td>
+          <td className="px-3 py-3"><div className="h-4 bg-slate-100 rounded w-40 sm:w-48 animate-pulse" /></td>
+          <td className="px-3 py-3"><div className="h-4 bg-slate-100 rounded w-12 animate-pulse" /></td>
+          <td className="px-3 py-3 hidden lg:table-cell"><div className="h-4 bg-slate-100 rounded w-12 animate-pulse" /></td>
+          <td className="px-3 py-3 hidden md:table-cell"><div className="h-4 bg-slate-100 rounded w-16 animate-pulse" /></td>
+          <td className="px-3 py-3 hidden md:table-cell"><div className="h-4 bg-slate-100 rounded w-20 animate-pulse" /></td>
+          <td className="px-3 py-3 hidden lg:table-cell"><div className="h-4 bg-slate-100 rounded w-16 animate-pulse" /></td>
+          <td className="px-3 py-3"><div className="h-5 bg-slate-100 rounded-full w-16 sm:w-20 animate-pulse" /></td>
+          <td className="px-3 py-3 pr-5 hidden sm:table-cell" />
+        </tr>
+      ))}
+    </>
+  );
+}
 
 export default function InventoryTable() {
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StockStatus | 'All'>('All');
-  const [shopFilter, setShopFilter] = useState<string>('All');
-  const [sortKey, setSortKey] = useState<SortKey>('productName');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const router = useRouter();
+  const [items, setItems]         = useState<InventoryItem[]>([]);
+  const [pagination, setPagination] = useState<Pagination>({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState('');
+  const [search, setSearch]       = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [sortKey, setSortKey]     = useState<SortKey>('createdAt');
+  const [sortDir, setSortDir]     = useState<'asc' | 'desc'>('desc');
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage]   = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [exporting, setExporting] = useState(false);
 
-  const shops = useMemo(() => ['All', ...Array.from(new Set(inventoryData.map(i => i.shop))).sort()], []);
-
-  const filtered = useMemo(() => {
-    let data = [...inventoryData];
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      data = data.filter(
-        i =>
-          i.productName.toLowerCase().includes(q) ||
-          i.barcode.toLowerCase().includes(q) ||
-          i.category.toLowerCase().includes(q)
-      );
-    }
-    if (statusFilter !== 'All') data = data.filter(i => i.status === statusFilter);
-    if (shopFilter !== 'All') data = data.filter(i => i.shop === shopFilter);
-    data.sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
-      if (typeof av === 'number' && typeof bv === 'number') {
-        return sortDir === 'asc' ? av - bv : bv - av;
-      }
-      return sortDir === 'asc'
-        ? String(av).localeCompare(String(bv))
-        : String(bv).localeCompare(String(av));
+  const fetchItems = useCallback(async () => {
+    setLoading(true); setError('');
+    const params = new URLSearchParams({
+      search, status: statusFilter, page: String(currentPage),
+      limit: String(itemsPerPage), sort: sortKey, dir: sortDir,
     });
-    return data;
-  }, [search, statusFilter, shopFilter, sortKey, sortDir]);
+    try {
+      const res  = await fetch(`/api/inventory?${params}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setItems(data.items ?? []);
+      setPagination(data.pagination ?? { page: 1, limit: itemsPerPage, total: 0, totalPages: 1 });
+    } catch {
+      setError('Failed to load inventory. Retrying…');
+    } finally {
+      setLoading(false);
+    }
+  }, [search, statusFilter, currentPage, itemsPerPage, sortKey, sortDir]);
 
-  const totalPages = Math.ceil(filtered.length / itemsPerPage);
-  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  useEffect(() => {
+    const id = setTimeout(fetchItems, search ? 350 : 0);
+    return () => clearTimeout(id);
+  }, [fetchItems, search]);
+
+  const handleExportCSV = async () => {
+    setExporting(true);
+    try {
+      const res  = await fetch('/api/reports?range=30d&export=inventory');
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      const cd   = res.headers.get('Content-Disposition') ?? '';
+      const fn   = cd.match(/filename="([^"]+)"/)?.[1] ?? 'inventory.csv';
+      a.href = url; a.download = fn; a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const toggleSort = (key: SortKey) => {
-    if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortKey(key); setSortDir('asc'); }
     setCurrentPage(1);
   };
 
-  const toggleRow = (id: string) => {
-    setSelectedRows(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
+  const toggleRow = (id: string) => setSelectedRows(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   const toggleAll = () => {
-    if (selectedRows.size === paginated.length) setSelectedRows(new Set());
-    else setSelectedRows(new Set(paginated.map(i => i.id)));
+    if (selectedRows.size === items.length) setSelectedRows(new Set());
+    else setSelectedRows(new Set(items.map(i => i._id)));
   };
 
   const SortIcon = ({ col }: { col: SortKey }) => (
     <span className="ml-1 inline-flex flex-col gap-0">
-      <Icon
-        name="ChevronUpIcon"
-        size={10}
-        className={sortKey === col && sortDir === 'asc' ? 'text-indigo-600' : 'text-slate-300'}
-      />
-      <Icon
-        name="ChevronDownIcon"
-        size={10}
-        className={sortKey === col && sortDir === 'desc' ? 'text-indigo-600' : 'text-slate-300'}
-      />
+      <Icon name="ChevronUpIcon" size={10} className={sortKey === col && sortDir === 'asc' ? 'text-indigo-600' : 'text-slate-300'} />
+      <Icon name="ChevronDownIcon" size={10} className={sortKey === col && sortDir === 'desc' ? 'text-indigo-600' : 'text-slate-300'} />
     </span>
   );
 
+  const needAttention = useMemo(() => items.filter(i => i.stockStatus !== 'in-stock').length, [items]);
+
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-card overflow-hidden">
-      {/* Table header */}
-      <div className="flex flex-wrap items-center gap-3 px-5 py-4 border-b border-slate-100">
-        <div className="flex-1 min-w-0">
-          <h3 className="text-base font-semibold text-slate-800">Inventory Overview</h3>
-          <p className="text-xs text-slate-400 mt-0.5">
-            {filtered.length} products · {inventoryData.filter(i => i.status === 'Low Stock' || i.status === 'Out of Stock').length} need attention
-          </p>
+      {/* Header */}
+      <div className="flex flex-col gap-3 px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-100">
+        <div className="flex items-center justify-between">
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm sm:text-base font-semibold text-slate-800">Inventory Overview</h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {loading ? <span className="inline-block w-32 h-3 bg-slate-100 rounded animate-pulse" /> : `${pagination.total} products · ${needAttention} need attention`}
+            </p>
+          </div>
+          <button onClick={handleExportCSV} disabled={exporting}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg bg-slate-50 hover:bg-slate-100 transition-all disabled:opacity-50 shrink-0 ml-2">
+            <Icon name="ArrowDownTrayIcon" size={13} className={`text-slate-400 ${exporting ? 'animate-bounce' : ''}`} />
+            <span className="hidden sm:inline">{exporting ? 'Exporting…' : 'Export CSV'}</span>
+          </button>
         </div>
+        <div className="flex items-center gap-2">
+          {/* Search */}
+          <div className="relative flex-1">
+            <Icon name="MagnifyingGlassIcon" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input type="text" placeholder="Search products, SKUs…" value={search}
+              onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
+              className="w-full pl-8 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
+          </div>
 
-        {/* Search */}
-        <div className="relative w-56">
-          <Icon name="MagnifyingGlassIcon" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search products, barcodes…"
-            value={search}
-            onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
-            className="w-full pl-8 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
-          />
+          {/* Status filter */}
+          <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+            className="text-xs border border-slate-200 rounded-lg px-2 sm:px-3 py-2 bg-slate-50 text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all shrink-0">
+            <option value="all">All</option>
+            <option value="in-stock">In Stock</option>
+            <option value="low-stock">Low Stock</option>
+            <option value="out-of-stock">Out of Stock</option>
+          </select>
         </div>
-
-        {/* Status filter */}
-        <select
-          value={statusFilter}
-          onChange={e => { setStatusFilter(e.target.value as StockStatus | 'All'); setCurrentPage(1); }}
-          className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
-        >
-          <option value="All">All Statuses</option>
-          {Object.keys(statusConfig).map(s => (
-            <option key={`status-opt-${s}`} value={s}>{s}</option>
-          ))}
-        </select>
-
-        {/* Shop filter */}
-        <select
-          value={shopFilter}
-          onChange={e => { setShopFilter(e.target.value); setCurrentPage(1); }}
-          className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
-        >
-          {shops.map(s => (
-            <option key={`shop-opt-${s}`} value={s}>{s === 'All' ? 'All Shops' : s}</option>
-          ))}
-        </select>
-
-        <button className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg bg-slate-50 hover:bg-slate-100 transition-all">
-          <Icon name="ArrowDownTrayIcon" size={13} className="text-slate-400" />
-          Export CSV
-        </button>
       </div>
+
+      {/* Error */}
+      {error && (
+        <div className="flex items-center gap-2 px-5 py-2.5 bg-red-50 border-b border-red-100 text-xs text-red-600">
+          <Icon name="ExclamationTriangleIcon" size={13} />
+          {error}
+          <button onClick={fetchItems} className="ml-auto underline">Retry</button>
+        </div>
+      )}
 
       {/* Bulk action bar */}
       {selectedRows.size > 0 && (
-        <div className="flex items-center gap-3 px-5 py-2.5 bg-indigo-50 border-b border-indigo-100 animate-slide-up">
-          <span className="text-xs font-semibold text-indigo-700">
-            {selectedRows.size} item{selectedRows.size > 1 ? 's' : ''} selected
-          </span>
+        <div className="flex items-center gap-3 px-5 py-2.5 bg-indigo-50 border-b border-indigo-100">
+          <span className="text-xs font-semibold text-indigo-700">{selectedRows.size} item{selectedRows.size > 1 ? 's' : ''} selected</span>
           <div className="flex items-center gap-2 ml-auto">
             <button className="text-xs font-medium text-indigo-600 hover:text-indigo-700 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-all flex items-center gap-1.5">
-              <Icon name="ArrowPathIcon" size={12} />
-              Bulk Reorder
+              <Icon name="ArrowPathIcon" size={12} />Bulk Reorder
             </button>
             <button className="text-xs font-medium text-indigo-600 hover:text-indigo-700 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-all flex items-center gap-1.5">
-              <Icon name="ArrowsRightLeftIcon" size={12} />
-              Transfer Stock
+              <Icon name="ArrowsRightLeftIcon" size={12} />Transfer Stock
             </button>
-            <button className="text-xs font-medium text-red-600 hover:text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-all flex items-center gap-1.5">
-              <Icon name="TrashIcon" size={12} />
-              Delete
-            </button>
-            <button
-              onClick={() => setSelectedRows(new Set())}
-              className="text-xs text-slate-400 hover:text-slate-600 ml-2"
-            >
+            <button onClick={() => setSelectedRows(new Set())} className="text-xs text-slate-400 hover:text-slate-600 ml-2">
               <Icon name="XMarkIcon" size={14} />
             </button>
           </div>
@@ -207,34 +209,26 @@ export default function InventoryTable() {
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100">
               <th className="w-10 pl-5 pr-3 py-3 text-left">
-                <input
-                  type="checkbox"
-                  checked={selectedRows.size === paginated.length && paginated.length > 0}
-                  onChange={toggleAll}
-                  className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30"
-                />
+                <input type="checkbox" checked={!loading && selectedRows.size === items.length && items.length > 0}
+                  onChange={toggleAll} className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30" />
               </th>
               {([
-                { key: 'barcode', label: 'Barcode', sortable: false },
-                { key: 'productName', label: 'Product Name', sortable: true },
-                { key: 'category', label: 'Category', sortable: true },
-                { key: 'quantity', label: 'Qty', sortable: true },
-                { key: 'threshold', label: 'Threshold', sortable: false },
-                { key: 'shop', label: 'Shop', sortable: true },
-                { key: 'unitCost', label: 'Unit Cost', sortable: false },
-                { key: 'lastUpdated', label: 'Last Updated', sortable: true },
-                { key: 'status', label: 'Status', sortable: true },
-                { key: 'actions', label: '', sortable: false },
-              ] as { key: string; label: string; sortable: boolean }[]).map(col => (
-                <th
-                  key={`th-${col.key}`}
+                { key: 'sku',          label: 'SKU',          sortable: false, hide: '' },
+                { key: 'name',         label: 'Product Name', sortable: true,  hide: '' },
+                { key: 'availableQty', label: 'Available',    sortable: true,  hide: '' },
+                { key: 'totalQty',     label: 'Total Qty',    sortable: true,  hide: 'hidden lg:table-cell' },
+                { key: 'price',        label: 'Unit Price',   sortable: true,  hide: 'hidden md:table-cell' },
+                { key: 'stockValue',   label: 'Stock Value',  sortable: false, hide: 'hidden md:table-cell' },
+                { key: 'lastMovedAt',  label: 'Last Moved',   sortable: false, hide: 'hidden lg:table-cell' },
+                { key: 'stockStatus',  label: 'Status',       sortable: false, hide: '' },
+                { key: 'actions',      label: '',             sortable: false, hide: 'hidden sm:table-cell' },
+              ] as { key: string; label: string; sortable: boolean; hide: string }[]).map(col => (
+                <th key={col.key}
                   onClick={col.sortable ? () => toggleSort(col.key as SortKey) : undefined}
-                  className={`
-                    px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-400 whitespace-nowrap
+                  className={`px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-400 whitespace-nowrap
                     ${col.sortable ? 'cursor-pointer hover:text-slate-600 select-none' : ''}
-                    ${col.key === 'productName' ? 'min-w-[220px]' : ''}
-                  `}
-                >
+                    ${col.key === 'name' ? 'min-w-[160px] sm:min-w-[200px]' : ''}
+                    ${col.hide}`}>
                   <span className="inline-flex items-center gap-1">
                     {col.label}
                     {col.sortable && <SortIcon col={col.key as SortKey} />}
@@ -244,204 +238,153 @@ export default function InventoryTable() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {paginated.length === 0 ? (
+            {loading ? (
+              <TableSkeleton rows={itemsPerPage} />
+            ) : items.length === 0 ? (
               <tr>
-                <td colSpan={11} className="py-16 text-center">
+                <td colSpan={10} className="py-16 text-center">
                   <div className="flex flex-col items-center gap-3">
                     <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center">
                       <Icon name="ArchiveBoxXMarkIcon" size={24} className="text-slate-400" />
                     </div>
                     <p className="text-sm font-semibold text-slate-600">No products found</p>
-                    <p className="text-xs text-slate-400 max-w-xs">
-                      No inventory items match your current search or filter criteria. Try adjusting the filters above.
-                    </p>
+                    <p className="text-xs text-slate-400">Try adjusting your search or filter.</p>
+                    {search || statusFilter !== 'all' ? (
+                      <button onClick={() => { setSearch(''); setStatusFilter('all'); }}
+                        className="text-xs text-indigo-600 hover:underline">Clear filters</button>
+                    ) : null}
                   </div>
                 </td>
               </tr>
-            ) : (
-              paginated.map((item, rowIdx) => {
-                const isSelected = selectedRows.has(item.id);
-                const statusCfg = statusConfig[item.status];
-                const stockPct = item.threshold > 0 ? Math.min((item.quantity / item.threshold) * 100, 100) : 100;
-                const stockBarColor = item.status === 'Out of Stock' ? 'bg-red-500' : item.status === 'Low Stock' ? 'bg-amber-500' : item.status === 'Reorder Pending' ? 'bg-blue-500' : 'bg-emerald-500';
-
-                return (
-                  <tr
-                    key={item.id}
-                    className={`
-                      group transition-colors duration-100
-                      ${isSelected ? 'bg-indigo-50/60' : rowIdx % 2 === 0 ? 'bg-white hover:bg-slate-50/80' : 'bg-slate-50/30 hover:bg-slate-50/80'}
-                    `}
-                  >
-                    <td className="pl-5 pr-3 py-3">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleRow(item.id)}
-                        className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30"
-                      />
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className="font-mono text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                        {item.barcode}
+            ) : items.map((item, rowIdx) => {
+              const isSelected  = selectedRows.has(item._id);
+              const statusCfg   = statusConfig[item.stockStatus] ?? statusConfig['in-stock'];
+              const stockPct    = item.totalQty > 0 ? Math.min((item.availableQty / item.totalQty) * 100, 100) : 0;
+              const barColor    = item.stockStatus === 'out-of-stock' ? 'bg-red-500' : item.stockStatus === 'low-stock' ? 'bg-amber-500' : 'bg-emerald-500';
+              return (
+                <tr key={item._id}
+                  className={`group transition-colors duration-100 ${isSelected ? 'bg-indigo-50/60' : rowIdx % 2 === 0 ? 'bg-white hover:bg-slate-50/80' : 'bg-slate-50/30 hover:bg-slate-50/80'}`}>
+                  <td className="pl-5 pr-3 py-3">
+                    <input type="checkbox" checked={isSelected} onChange={() => toggleRow(item._id)}
+                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30" />
+                  </td>
+                  <td className="px-3 py-3">
+                    <span className="font-mono text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{item.sku}</span>
+                  </td>
+                  <td className="px-3 py-3 min-w-[160px] sm:min-w-[200px]">
+                    <p className="text-sm font-medium text-slate-800 truncate max-w-[180px] sm:max-w-[220px]" title={item.name}>{item.name}</p>
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="flex flex-col gap-1">
+                      <span className={`font-tabular font-semibold text-sm ${item.availableQty === 0 ? 'text-red-600' : item.availableQty <= 20 ? 'text-amber-600' : 'text-slate-800'}`}>
+                        {item.availableQty.toLocaleString('en-IN')}
                       </span>
-                    </td>
-                    <td className="px-3 py-3 min-w-[220px]">
-                      <p className="text-sm font-medium text-slate-800 truncate max-w-[220px]" title={item.productName}>
-                        {item.productName}
-                      </p>
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full font-medium">
-                        {item.category}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-col gap-1">
-                        <span className={`font-tabular font-semibold text-sm ${item.quantity === 0 ? 'text-red-600' : item.quantity <= item.threshold ? 'text-amber-600' : 'text-slate-800'}`}>
-                          {item.quantity.toLocaleString()}
-                        </span>
-                        <div className="w-12 h-1 bg-slate-100 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${stockBarColor}`}
-                            style={{ width: `${stockPct}%` }}
-                          />
-                        </div>
+                      <div className="w-12 h-1 bg-slate-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${barColor}`} style={{ width: `${stockPct}%` }} />
                       </div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className="font-tabular text-xs text-slate-400">{item.threshold}</span>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                        <Icon name="BuildingStorefrontIcon" size={12} className="text-slate-400" />
-                        {item.shop}
-                      </div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className="font-tabular text-xs text-slate-600">${item.unitCost.toFixed(2)}</span>
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className="text-xs text-slate-400 font-tabular">
-                        {new Date(item.lastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${statusCfg.className}`}>
-                        {statusCfg.label}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 pr-5">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                        <button
-                          className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all duration-150"
-                          title="View product details"
-                        >
-                          <Icon name="EyeIcon" size={14} />
-                        </button>
-                        <button
-                          className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all duration-150"
-                          title="Edit product"
-                        >
-                          <Icon name="PencilSquareIcon" size={14} />
-                        </button>
-                        <button
-                          className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all duration-150"
-                          title="Delete product — this cannot be undone"
-                        >
-                          <Icon name="TrashIcon" size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 hidden lg:table-cell">
+                    <span className="font-tabular text-xs text-slate-500">{item.totalQty.toLocaleString('en-IN')}</span>
+                  </td>
+                  <td className="px-3 py-3 hidden md:table-cell">
+                    <span className="font-tabular text-xs text-slate-600">₹{item.price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </td>
+                  <td className="px-3 py-3 hidden md:table-cell">
+                    <span className="font-tabular text-xs text-slate-600 font-medium">
+                      ₹{item.stockValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 hidden lg:table-cell">
+                    <span className="text-xs text-slate-400 font-tabular">
+                      {new Date(item.lastMovedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3">
+                    <span className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${statusCfg.className}`}>
+                      {statusCfg.label}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 pr-5 hidden sm:table-cell">
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                      <button onClick={() => router.push('/dashboard/products')}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all" title="View product">
+                        <Icon name="EyeIcon" size={14} />
+                      </button>
+                      <button onClick={() => router.push('/dashboard/inventory')}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all" title="View inventory logs">
+                        <Icon name="PencilSquareIcon" size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       {/* Pagination */}
-      {filtered.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-slate-100 bg-slate-50/50">
-          <div className="flex items-center gap-3 text-xs text-slate-500">
+      {!loading && pagination.total > 0 && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 px-4 sm:px-5 py-3 border-t border-slate-100 bg-slate-50/50">
+          <div className="flex items-center gap-2 sm:gap-3 text-xs text-slate-500">
             <span>
               Showing{' '}
               <span className="font-semibold text-slate-700">
-                {(currentPage - 1) * itemsPerPage + 1}–{Math.min(currentPage * itemsPerPage, filtered.length)}
+                {(currentPage - 1) * itemsPerPage + 1}–{Math.min(currentPage * itemsPerPage, pagination.total)}
               </span>{' '}
-              of{' '}
-              <span className="font-semibold text-slate-700">{filtered.length}</span> products
+              of <span className="font-semibold text-slate-700">{pagination.total}</span>
             </span>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <span>Rows:</span>
-              <select
-                value={itemsPerPage}
-                onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-                className="text-xs border border-slate-200 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
-              >
-                {ITEMS_PER_PAGE_OPTIONS.map(opt => (
-                  <option key={`ipp-${opt}`} value={opt}>{opt}</option>
-                ))}
+              <select value={itemsPerPage} onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                className="text-xs border border-slate-200 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400">
+                {ITEMS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
               </select>
             </div>
           </div>
-
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setCurrentPage(1)}
-              disabled={currentPage === 1}
-              className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-              title="First page"
-            >
-              <Icon name="ChevronDoubleLeftIcon" size={13} />
-            </button>
-            <button
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-              title="Previous page"
-            >
-              <Icon name="ChevronLeftIcon" size={13} />
-            </button>
-            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-              let page: number;
-              if (totalPages <= 5) page = i + 1;
-              else if (currentPage <= 3) page = i + 1;
-              else if (currentPage >= totalPages - 2) page = totalPages - 4 + i;
-              else page = currentPage - 2 + i;
+            {[
+              { icon: 'ChevronDoubleLeftIcon',  fn: () => setCurrentPage(1),                                 disabled: currentPage === 1 },
+              { icon: 'ChevronLeftIcon',         fn: () => setCurrentPage(p => Math.max(1, p - 1)),          disabled: currentPage === 1 },
+              { icon: 'ChevronRightIcon',        fn: () => setCurrentPage(p => Math.min(pagination.totalPages, p + 1)), disabled: currentPage === pagination.totalPages },
+              { icon: 'ChevronDoubleRightIcon',  fn: () => setCurrentPage(pagination.totalPages),             disabled: currentPage === pagination.totalPages },
+            ].map(({ icon, fn, disabled }, i) => {
+              // Insert page numbers between prev/next arrows
+              if (i === 2) {
+                const pages: number[] = [];
+                const tp = pagination.totalPages;
+                for (let j = 0; j < Math.min(5, tp); j++) {
+                  let p: number;
+                  if (tp <= 5) p = j + 1;
+                  else if (currentPage <= 3) p = j + 1;
+                  else if (currentPage >= tp - 2) p = tp - 4 + j;
+                  else p = currentPage - 2 + j;
+                  pages.push(p);
+                }
+                return (
+                  <React.Fragment key="pages">
+                    {pages.map(p => (
+                      <button key={p} onClick={() => setCurrentPage(p)}
+                        className={`w-7 h-7 flex items-center justify-center rounded-lg text-xs font-medium transition-all
+                          ${currentPage === p ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}>
+                        {p}
+                      </button>
+                    ))}
+                    <button onClick={fn} disabled={disabled}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                      <Icon name={icon as Parameters<typeof Icon>[0]['name']} size={13} />
+                    </button>
+                  </React.Fragment>
+                );
+              }
               return (
-                <button
-                  key={`page-${page}`}
-                  onClick={() => setCurrentPage(page)}
-                  className={`
-                    w-7 h-7 flex items-center justify-center rounded-lg text-xs font-medium transition-all
-                    ${currentPage === page
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
-                    }
-                  `}
-                >
-                  {page}
+                <button key={icon} onClick={fn} disabled={disabled}
+                  className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                  <Icon name={icon as Parameters<typeof Icon>[0]['name']} size={13} />
                 </button>
               );
             })}
-            <button
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-              title="Next page"
-            >
-              <Icon name="ChevronRightIcon" size={13} />
-            </button>
-            <button
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={currentPage === totalPages}
-              className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-              title="Last page"
-            >
-              <Icon name="ChevronDoubleRightIcon" size={13} />
-            </button>
           </div>
         </div>
       )}
