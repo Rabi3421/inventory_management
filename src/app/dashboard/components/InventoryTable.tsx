@@ -43,13 +43,14 @@ function TableSkeleton({ rows = 8 }: { rows?: number }) {
         <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}>
           <td className="pl-5 pr-3 py-3"><div className="w-4 h-4 bg-slate-100 rounded animate-pulse" /></td>
           <td className="px-3 py-3"><div className="h-4 bg-slate-100 rounded w-24 animate-pulse" /></td>
-          <td className="px-3 py-3"><div className="h-4 bg-slate-100 rounded w-48 animate-pulse" /></td>
-          <td className="px-3 py-3"><div className="h-4 bg-slate-100 rounded w-16 animate-pulse" /></td>
+          <td className="px-3 py-3"><div className="h-4 bg-slate-100 rounded w-40 sm:w-48 animate-pulse" /></td>
           <td className="px-3 py-3"><div className="h-4 bg-slate-100 rounded w-12 animate-pulse" /></td>
-          <td className="px-3 py-3"><div className="h-4 bg-slate-100 rounded w-16 animate-pulse" /></td>
-          <td className="px-3 py-3"><div className="h-4 bg-slate-100 rounded w-20 animate-pulse" /></td>
-          <td className="px-3 py-3"><div className="h-5 bg-slate-100 rounded-full w-20 animate-pulse" /></td>
-          <td className="px-3 py-3 pr-5" />
+          <td className="px-3 py-3 hidden lg:table-cell"><div className="h-4 bg-slate-100 rounded w-12 animate-pulse" /></td>
+          <td className="px-3 py-3 hidden md:table-cell"><div className="h-4 bg-slate-100 rounded w-16 animate-pulse" /></td>
+          <td className="px-3 py-3 hidden md:table-cell"><div className="h-4 bg-slate-100 rounded w-20 animate-pulse" /></td>
+          <td className="px-3 py-3 hidden lg:table-cell"><div className="h-4 bg-slate-100 rounded w-16 animate-pulse" /></td>
+          <td className="px-3 py-3"><div className="h-5 bg-slate-100 rounded-full w-16 sm:w-20 animate-pulse" /></td>
+          <td className="px-3 py-3 pr-5 hidden sm:table-cell" />
         </tr>
       ))}
     </>
@@ -141,36 +142,38 @@ export default function InventoryTable() {
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-card overflow-hidden">
       {/* Header */}
-      <div className="flex flex-wrap items-center gap-3 px-5 py-4 border-b border-slate-100">
-        <div className="flex-1 min-w-0">
-          <h3 className="text-base font-semibold text-slate-800">Inventory Overview</h3>
-          <p className="text-xs text-slate-400 mt-0.5">
-            {loading ? <span className="inline-block w-32 h-3 bg-slate-100 rounded animate-pulse" /> : `${pagination.total} products · ${needAttention} need attention`}
-          </p>
+      <div className="flex flex-col gap-3 px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-100">
+        <div className="flex items-center justify-between">
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm sm:text-base font-semibold text-slate-800">Inventory Overview</h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {loading ? <span className="inline-block w-32 h-3 bg-slate-100 rounded animate-pulse" /> : `${pagination.total} products · ${needAttention} need attention`}
+            </p>
+          </div>
+          <button onClick={handleExportCSV} disabled={exporting}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg bg-slate-50 hover:bg-slate-100 transition-all disabled:opacity-50 shrink-0 ml-2">
+            <Icon name="ArrowDownTrayIcon" size={13} className={`text-slate-400 ${exporting ? 'animate-bounce' : ''}`} />
+            <span className="hidden sm:inline">{exporting ? 'Exporting…' : 'Export CSV'}</span>
+          </button>
         </div>
+        <div className="flex items-center gap-2">
+          {/* Search */}
+          <div className="relative flex-1">
+            <Icon name="MagnifyingGlassIcon" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input type="text" placeholder="Search products, SKUs…" value={search}
+              onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
+              className="w-full pl-8 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
+          </div>
 
-        {/* Search */}
-        <div className="relative w-56">
-          <Icon name="MagnifyingGlassIcon" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input type="text" placeholder="Search products, SKUs…" value={search}
-            onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
-            className="w-full pl-8 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
+          {/* Status filter */}
+          <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+            className="text-xs border border-slate-200 rounded-lg px-2 sm:px-3 py-2 bg-slate-50 text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all shrink-0">
+            <option value="all">All</option>
+            <option value="in-stock">In Stock</option>
+            <option value="low-stock">Low Stock</option>
+            <option value="out-of-stock">Out of Stock</option>
+          </select>
         </div>
-
-        {/* Status filter */}
-        <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}
-          className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all">
-          <option value="all">All Statuses</option>
-          <option value="in-stock">In Stock</option>
-          <option value="low-stock">Low Stock</option>
-          <option value="out-of-stock">Out of Stock</option>
-        </select>
-
-        <button onClick={handleExportCSV} disabled={exporting}
-          className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg bg-slate-50 hover:bg-slate-100 transition-all disabled:opacity-50">
-          <Icon name="ArrowDownTrayIcon" size={13} className={`text-slate-400 ${exporting ? 'animate-bounce' : ''}`} />
-          {exporting ? 'Exporting…' : 'Export CSV'}
-        </button>
       </div>
 
       {/* Error */}
@@ -210,21 +213,22 @@ export default function InventoryTable() {
                   onChange={toggleAll} className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30" />
               </th>
               {([
-                { key: 'sku',          label: 'SKU',          sortable: false },
-                { key: 'name',         label: 'Product Name', sortable: true  },
-                { key: 'availableQty', label: 'Available',    sortable: true  },
-                { key: 'totalQty',     label: 'Total Qty',    sortable: true  },
-                { key: 'price',        label: 'Unit Price',   sortable: true  },
-                { key: 'stockValue',   label: 'Stock Value',  sortable: false },
-                { key: 'lastMovedAt',  label: 'Last Moved',   sortable: false },
-                { key: 'stockStatus',  label: 'Status',       sortable: false },
-                { key: 'actions',      label: '',             sortable: false },
-              ] as { key: string; label: string; sortable: boolean }[]).map(col => (
+                { key: 'sku',          label: 'SKU',          sortable: false, hide: '' },
+                { key: 'name',         label: 'Product Name', sortable: true,  hide: '' },
+                { key: 'availableQty', label: 'Available',    sortable: true,  hide: '' },
+                { key: 'totalQty',     label: 'Total Qty',    sortable: true,  hide: 'hidden lg:table-cell' },
+                { key: 'price',        label: 'Unit Price',   sortable: true,  hide: 'hidden md:table-cell' },
+                { key: 'stockValue',   label: 'Stock Value',  sortable: false, hide: 'hidden md:table-cell' },
+                { key: 'lastMovedAt',  label: 'Last Moved',   sortable: false, hide: 'hidden lg:table-cell' },
+                { key: 'stockStatus',  label: 'Status',       sortable: false, hide: '' },
+                { key: 'actions',      label: '',             sortable: false, hide: 'hidden sm:table-cell' },
+              ] as { key: string; label: string; sortable: boolean; hide: string }[]).map(col => (
                 <th key={col.key}
                   onClick={col.sortable ? () => toggleSort(col.key as SortKey) : undefined}
                   className={`px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-400 whitespace-nowrap
                     ${col.sortable ? 'cursor-pointer hover:text-slate-600 select-none' : ''}
-                    ${col.key === 'name' ? 'min-w-[200px]' : ''}`}>
+                    ${col.key === 'name' ? 'min-w-[160px] sm:min-w-[200px]' : ''}
+                    ${col.hide}`}>
                   <span className="inline-flex items-center gap-1">
                     {col.label}
                     {col.sortable && <SortIcon col={col.key as SortKey} />}
@@ -267,8 +271,8 @@ export default function InventoryTable() {
                   <td className="px-3 py-3">
                     <span className="font-mono text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{item.sku}</span>
                   </td>
-                  <td className="px-3 py-3 min-w-[200px]">
-                    <p className="text-sm font-medium text-slate-800 truncate max-w-[220px]" title={item.name}>{item.name}</p>
+                  <td className="px-3 py-3 min-w-[160px] sm:min-w-[200px]">
+                    <p className="text-sm font-medium text-slate-800 truncate max-w-[180px] sm:max-w-[220px]" title={item.name}>{item.name}</p>
                   </td>
                   <td className="px-3 py-3">
                     <div className="flex flex-col gap-1">
@@ -280,18 +284,18 @@ export default function InventoryTable() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-3 hidden lg:table-cell">
                     <span className="font-tabular text-xs text-slate-500">{item.totalQty.toLocaleString('en-IN')}</span>
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-3 hidden md:table-cell">
                     <span className="font-tabular text-xs text-slate-600">₹{item.price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-3 hidden md:table-cell">
                     <span className="font-tabular text-xs text-slate-600 font-medium">
                       ₹{item.stockValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                     </span>
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-3 hidden lg:table-cell">
                     <span className="text-xs text-slate-400 font-tabular">
                       {new Date(item.lastMovedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </span>
@@ -301,7 +305,7 @@ export default function InventoryTable() {
                       {statusCfg.label}
                     </span>
                   </td>
-                  <td className="px-3 py-3 pr-5">
+                  <td className="px-3 py-3 pr-5 hidden sm:table-cell">
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                       <button onClick={() => router.push('/dashboard/products')}
                         className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all" title="View product">
@@ -322,16 +326,16 @@ export default function InventoryTable() {
 
       {/* Pagination */}
       {!loading && pagination.total > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-slate-100 bg-slate-50/50">
-          <div className="flex items-center gap-3 text-xs text-slate-500">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 px-4 sm:px-5 py-3 border-t border-slate-100 bg-slate-50/50">
+          <div className="flex items-center gap-2 sm:gap-3 text-xs text-slate-500">
             <span>
               Showing{' '}
               <span className="font-semibold text-slate-700">
                 {(currentPage - 1) * itemsPerPage + 1}–{Math.min(currentPage * itemsPerPage, pagination.total)}
               </span>{' '}
-              of <span className="font-semibold text-slate-700">{pagination.total}</span> products
+              of <span className="font-semibold text-slate-700">{pagination.total}</span>
             </span>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <span>Rows:</span>
               <select value={itemsPerPage} onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
                 className="text-xs border border-slate-200 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400">

@@ -27,8 +27,19 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ activeRoute = '/dashboard' }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window !== 'undefined') return window.innerWidth < 768;
+    return false;
+  });
   const [inventoryCount, setInventoryCount] = useState<number>(0);
+
+  useEffect(() => {
+    function handleResize() {
+      if (window.innerWidth < 768) setCollapsed(true);
+    }
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     fetch('/api/inventory?limit=1')

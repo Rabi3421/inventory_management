@@ -26,10 +26,23 @@ interface ShopAdminSidebarProps {
 }
 
 export default function ShopAdminSidebar({ activeRoute = '/shop-admin/dashboard' }: ShopAdminSidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  // Auto-collapse on small screens
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window !== 'undefined') return window.innerWidth < 768;
+    return false;
+  });
   const { user } = useAuth();
   const shopName = user?.shopName ?? 'My Shop';
   const shopId   = user?.shopId   ?? '';
+
+  // Collapse on resize below md
+  useEffect(() => {
+    function handleResize() {
+      if (window.innerWidth < 768) setCollapsed(true);
+    }
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const [lowStock, setLowStock] = useState<number | undefined>(undefined);
 

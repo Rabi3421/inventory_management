@@ -41,9 +41,9 @@ export default function QuickActionsPanel({ alerts, loading }: Props) {
 
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-card overflow-hidden h-full flex flex-col">
-      <div className="px-5 pt-5 pb-4 border-b border-slate-100">
+      <div className="px-4 sm:px-5 pt-4 sm:pt-5 pb-3 sm:pb-4 border-b border-slate-100">
         <div className="flex items-center justify-between mb-1">
-          <h3 className="text-base font-semibold text-slate-800">Quick Actions</h3>
+          <h3 className="text-sm sm:text-base font-semibold text-slate-800">Quick Actions</h3>
           {loading ? (
             <div className="h-5 w-16 bg-slate-100 rounded-full animate-pulse" />
           ) : (

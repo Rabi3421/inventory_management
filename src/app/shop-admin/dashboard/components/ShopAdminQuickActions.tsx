@@ -30,9 +30,9 @@ export default function ShopAdminQuickActions({ alerts, loading }: Props) {
 
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-card overflow-hidden h-full flex flex-col">
-      <div className="px-5 pt-5 pb-4 border-b border-slate-100">
+      <div className="px-4 sm:px-5 pt-4 sm:pt-5 pb-3 sm:pb-4 border-b border-slate-100">
         <div className="flex items-center justify-between mb-1">
-          <h3 className="text-base font-semibold text-slate-800">Quick Actions</h3>
+          <h3 className="text-sm sm:text-base font-semibold text-slate-800">Quick Actions</h3>
           {!loading && alerts.length > 0 && (
             <span className="flex items-center gap-1 text-xs text-red-600 bg-red-50 border border-red-100 rounded-full px-2 py-0.5 font-medium">
               <Icon name="ExclamationCircleIcon" size={12} />{alerts.length} alerts

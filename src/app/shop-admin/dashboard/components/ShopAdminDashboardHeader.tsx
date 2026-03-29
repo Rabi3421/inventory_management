@@ -32,25 +32,25 @@ export default function ShopAdminDashboardHeader({
   const synced = timeAgo(lastRefreshed);
 
   return (
-    <div className="flex items-start justify-between gap-4">
-      <div>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-0.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             {shopName || 'My Shop'} — Live
           </span>
         </div>
-        <h1 className="text-2xl font-bold text-slate-900">My Shop Dashboard</h1>
-        <p className="text-slate-500 text-sm mt-0.5">
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">My Shop Dashboard</h1>
+        <p className="text-slate-500 text-xs sm:text-sm mt-0.5 truncate">
           {today} · {shopName || 'My Shop'}{synced ? ` · Last synced ${synced}` : ''}
         </p>
       </div>
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-2 flex-wrap shrink-0">
         <div className="relative">
           <select
             value={range}
             onChange={e => onRangeChange(e.target.value)}
-            className="appearance-none flex items-center gap-2 pl-8 pr-8 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all duration-150 shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+            className="appearance-none flex items-center gap-2 pl-8 pr-8 py-2 text-xs sm:text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all duration-150 shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
           >
             {RANGES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
@@ -60,11 +60,11 @@ export default function ShopAdminDashboardHeader({
         <button
           onClick={onRefresh}
           disabled={refreshing}
-          className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all duration-150 shadow-sm disabled:opacity-60">
+          className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all duration-150 shadow-sm disabled:opacity-60">
           <Icon name="ArrowPathIcon" size={15} className={`text-slate-400 ${refreshing ? 'animate-spin' : ''}`} />
-          Refresh
+          <span className="hidden sm:inline">Refresh</span>
         </button>
-        <button className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-all duration-150 shadow-md shadow-emerald-600/20 active:scale-95">
+        <button className="flex items-center gap-1.5 px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-all duration-150 shadow-md shadow-emerald-600/20 active:scale-95">
           <Icon name="PlusIcon" size={15} />
           Add Product
         </button>

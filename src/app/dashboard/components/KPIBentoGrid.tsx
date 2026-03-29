@@ -49,7 +49,7 @@ function SkeletonCard({ hero = false }: { hero?: boolean }) {
 export default function KPIBentoGrid({ data, loading }: Props) {
   if (loading || !data) {
     return (
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         <SkeletonCard hero />
         <SkeletonCard />
         <SkeletonCard />
@@ -133,29 +133,29 @@ export default function KPIBentoGrid({ data, loading }: Props) {
   };
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
       {cards.map(card => {
         const s = variants[card.variant];
         const isHero = card.variant === 'hero';
         const trendColor = !card.trend ? '' : card.trend.dir === 'up' ? s.trendUp : card.trend.dir === 'down' ? s.trendDown : s.trendNeutral;
         return (
           <div key={card.id}
-            className={`${card.colSpan === 2 ? 'col-span-2' : 'col-span-1'} rounded-2xl border p-5 shadow-card transition-all duration-200 hover:shadow-card-md hover:-translate-y-0.5 ${s.card}`}>
+            className={`${card.colSpan === 2 ? 'col-span-2' : 'col-span-1'} rounded-2xl border p-4 sm:p-5 shadow-card transition-all duration-200 hover:shadow-card-md hover:-translate-y-0.5 ${s.card}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
-                <p className={`text-xs font-semibold uppercase tracking-widest mb-3 ${s.label}`}>{card.label}</p>
-                <p className={`font-tabular font-bold leading-none mb-1 ${isHero ? 'text-4xl' : 'text-3xl'} ${s.value}`}>{card.value}</p>
-                {card.sub && <p className={`text-xs mt-1.5 ${s.sub}`}>{card.sub}</p>}
+                <p className={`text-xs font-semibold uppercase tracking-widest mb-2 sm:mb-3 ${s.label}`}>{card.label}</p>
+                <p className={`font-tabular font-bold leading-none mb-1 ${isHero ? 'text-2xl sm:text-4xl' : 'text-xl sm:text-3xl'} ${s.value}`}>{card.value}</p>
+                {card.sub && <p className={`text-xs mt-1 sm:mt-1.5 ${s.sub}`}>{card.sub}</p>}
                 {card.trend && (
-                  <div className={`flex items-center gap-1 mt-3 text-xs font-medium ${trendColor}`}>
+                  <div className={`flex items-center gap-1 mt-2 sm:mt-3 text-xs font-medium ${trendColor}`}>
                     <Icon name={card.trend.dir === 'up' ? 'ArrowTrendingUpIcon' : card.trend.dir === 'down' ? 'ArrowTrendingDownIcon' : 'MinusIcon'} size={13} />
                     <span>{card.trend.val}</span>
                     <span className={`font-normal ${s.trendSub}`}>{card.trend.label}</span>
                   </div>
                 )}
               </div>
-              <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${s.iconBg}`}>
-                <Icon name={card.icon as Parameters<typeof Icon>[0]['name']} size={22} className={s.icon} />
+              <div className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center shrink-0 ${s.iconBg}`}>
+                <Icon name={card.icon as Parameters<typeof Icon>[0]['name']} size={20} className={s.icon} />
               </div>
             </div>
           </div>

@@ -50,10 +50,10 @@ export default function DashboardHeader({
   const selectedRange = RANGES.find(r => r.value === range) ?? RANGES[1];
 
   return (
-    <div className="flex items-start justify-between gap-4">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Inventory Dashboard</h1>
-        <p className="text-slate-500 text-sm mt-0.5">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0">
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Inventory Dashboard</h1>
+        <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
           {today}
           {shopCount > 0 && (
             <span className={`ml-2 ${activeShops === shopCount ? 'text-emerald-600' : 'text-amber-600'}`}>
@@ -62,15 +62,16 @@ export default function DashboardHeader({
           )}
         </p>
       </div>
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-2 flex-wrap shrink-0">
         {/* Range picker */}
         <div className="relative">
           <button
             onClick={() => setShowRangePicker(v => !v)}
-            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all shadow-card"
+            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-2 text-xs sm:text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all shadow-card"
           >
             <Icon name="CalendarDaysIcon" size={15} className="text-slate-400" />
-            {selectedRange.label}
+            <span className="hidden sm:inline">{selectedRange.label}</span>
+            <span className="sm:hidden">{selectedRange.value}</span>
             <Icon name="ChevronDownIcon" size={13} className="text-slate-400" />
           </button>
           {showRangePicker && (
@@ -91,16 +92,16 @@ export default function DashboardHeader({
           onClick={onRefresh}
           disabled={refreshing}
           title={lastRefreshedStr ? `Last refreshed: ${lastRefreshedStr}` : ''}
-          className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all shadow-card disabled:opacity-60"
+          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 text-xs sm:text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all shadow-card disabled:opacity-60"
         >
           <Icon name="ArrowPathIcon" size={15} className={`text-slate-400 ${refreshing ? 'animate-spin' : ''}`} />
-          {refreshing ? 'Refreshing…' : 'Refresh'}
+          <span className="hidden sm:inline">{refreshing ? 'Refreshing…' : 'Refresh'}</span>
         </button>
 
         {/* Add Product */}
         <button
           onClick={() => router.push('/dashboard/products')}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-all shadow-md shadow-indigo-600/20 active:scale-95"
+          className="flex items-center gap-1.5 px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-all shadow-md shadow-indigo-600/20 active:scale-95"
         >
           <Icon name="PlusIcon" size={15} />
           Add Product

@@ -66,8 +66,8 @@ export default function ShopAdminDashboardPage() {
           loading={loading}
           shopName={shopName}
         />
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          <div className="xl:col-span-2">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+          <div className="lg:col-span-2">
             <ShopAdminChartsSection
               weeklyData={data?.weeklyChart ?? []}
               categoryData={data?.categoryChart ?? []}
@@ -75,7 +75,7 @@ export default function ShopAdminDashboardPage() {
               loading={loading}
             />
           </div>
-          <div className="xl:col-span-1">
+          <div className="lg:col-span-1">
             <ShopAdminQuickActions
               alerts={data?.stockAlerts ?? []}
               loading={loading}

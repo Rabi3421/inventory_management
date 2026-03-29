@@ -62,28 +62,29 @@ export default function ChartsSection({ shopwiseData, categoryData, loading }: P
 
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-card overflow-hidden">
-      <div className="flex items-center justify-between gap-4 px-5 pt-5 pb-4 border-b border-slate-100">
+      <div className="flex flex-col xs:flex-row items-start xs:items-center justify-between gap-3 px-4 sm:px-5 pt-4 sm:pt-5 pb-3 sm:pb-4 border-b border-slate-100">
         <div>
-          <h3 className="text-base font-semibold text-slate-800">Inventory Analytics</h3>
+          <h3 className="text-sm sm:text-base font-semibold text-slate-800">Inventory Analytics</h3>
           <p className="text-xs text-slate-400 mt-0.5">Stock distribution across shops and categories</p>
         </div>
-        <div className="flex gap-1 p-0.5 bg-slate-100 rounded-lg">
-          {([{ key: 'shopwise', label: 'Shop-wise' }, { key: 'category', label: 'By Category' }] as { key: ChartTab; label: string }[]).map(tab => (
+        <div className="flex gap-1 p-0.5 bg-slate-100 rounded-lg w-full xs:w-auto">
+          {([{ key: 'shopwise', label: 'Shop-wise', short: 'Shops' }, { key: 'category', label: 'By Category', short: 'Category' }] as { key: ChartTab; label: string; short: string }[]).map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150
+              className={`flex-1 xs:flex-none px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150
                 ${activeTab === tab.key ? 'bg-white text-indigo-700 shadow-card' : 'text-slate-500 hover:text-slate-700'}`}>
-              {tab.label}
+              <span className="sm:hidden">{tab.short}</span>
+              <span className="hidden sm:inline">{tab.label}</span>
             </button>
           ))}
         </div>
       </div>
 
-      <div className="p-5">
+      <div className="p-3 sm:p-5">
         {loading ? (
           <ChartSkeleton />
         ) : activeTab === 'shopwise' ? (
           <div>
-            <div className="flex items-center gap-4 mb-4">
+            <div className="flex items-center gap-3 sm:gap-4 mb-3 sm:mb-4 flex-wrap">
               {[{ color: '#4f46e5', label: 'In Stock' }, { color: '#f59e0b', label: 'Low Stock' }, { color: '#ef4444', label: 'Out of Stock' }].map(l => (
                 <div key={l.label} className="flex items-center gap-1.5 text-xs text-slate-500">
                   <span className="w-2.5 h-2.5 rounded-sm" style={{ background: l.color }} />{l.label}
@@ -91,9 +92,9 @@ export default function ChartsSection({ shopwiseData, categoryData, loading }: P
               ))}
             </div>
             {shopwiseData.length === 0 ? (
-              <div className="h-[240px] flex items-center justify-center text-slate-400 text-sm">No shop data available</div>
+              <div className="h-[200px] sm:h-[240px] flex items-center justify-center text-slate-400 text-sm">No shop data available</div>
             ) : (
-              <ResponsiveContainer width="100%" height={240}>
+              <ResponsiveContainer width="100%" height={200} className="sm:!h-[240px]">
                 <BarChart data={shopwiseData} barGap={2} barCategoryGap="28%">
                   <CartesianGrid vertical={false} stroke="#f1f5f9" strokeDasharray="3 3" />
                   <XAxis dataKey="shop" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
@@ -107,20 +108,22 @@ export default function ChartsSection({ shopwiseData, categoryData, loading }: P
             )}
           </div>
         ) : (
-          <div className="flex items-center gap-6">
+          <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
             {categoryData.length === 0 ? (
-              <div className="w-full h-[240px] flex items-center justify-center text-slate-400 text-sm">No category data available</div>
+              <div className="w-full h-[200px] sm:h-[240px] flex items-center justify-center text-slate-400 text-sm">No category data available</div>
             ) : (
               <>
-                <ResponsiveContainer width="55%" height={240}>
+                <div className="w-full sm:w-[55%]">
+                <ResponsiveContainer width="100%" height={180} className="sm:!h-[240px]">
                   <PieChart>
-                    <Pie data={categoryData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={3} dataKey="value">
+                    <Pie data={categoryData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value">
                       {categoryData.map((entry, i) => <Cell key={`cell-${i}`} fill={entry.color} />)}
                     </Pie>
                     <Tooltip content={<CategoryTooltip />} />
                   </PieChart>
                 </ResponsiveContainer>
-                <div className="flex-1 space-y-2.5">
+                </div>
+                <div className="flex-1 w-full space-y-2 sm:space-y-2.5">y-2 sm:space-y-2.5">
                   {(() => {
                     const total = categoryData.reduce((s, c) => s + c.value, 0);
                     return categoryData.map(cat => {

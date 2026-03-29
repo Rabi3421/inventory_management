@@ -69,14 +69,14 @@ export default function ShopAdminKPIGrid({ data, loading, shopName }: Props) {
   };
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
       {cards.map(card => {
         const s = variants[card.variant];
         const isHero = card.variant === 'hero';
         const trendColor = card.trend ? (card.trend.dir === 'up' ? s.trendUp : s.trendDown) : '';
         return (
           <div key={card.id}
-            className={`${card.colSpan === 2 ? 'col-span-2' : 'col-span-1'} rounded-2xl border p-5 shadow-card transition-all duration-200 hover:shadow-card-md hover:-translate-y-0.5 ${s.card}`}>
+            className={`${card.colSpan === 2 ? 'col-span-2' : 'col-span-1'} rounded-2xl border p-4 sm:p-5 shadow-card transition-all duration-200 hover:shadow-card-md hover:-translate-y-0.5 ${s.card}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <p className={`text-xs font-semibold uppercase tracking-widest mb-3 ${s.label}`}>{card.label}</p>
@@ -87,7 +87,7 @@ export default function ShopAdminKPIGrid({ data, loading, shopName }: Props) {
                   </div>
                 ) : (
                   <>
-                    <p className={`font-tabular font-bold leading-none mb-1 ${isHero ? 'text-4xl' : 'text-3xl'} ${s.value}`}>{card.value}</p>
+                    <p className={`font-tabular font-bold leading-none mb-1 ${isHero ? 'text-2xl sm:text-4xl' : 'text-xl sm:text-3xl'} ${s.value}`}>{card.value}</p>
                     <p className={`text-xs mt-1.5 ${s.sub}`}>{card.sub}</p>
                     {card.trend && (
                       <div className={`flex items-center gap-1 mt-3 text-xs font-medium ${trendColor}`}>

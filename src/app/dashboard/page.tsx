@@ -64,15 +64,15 @@ export default function DashboardPage() {
           loading={loading}
         />
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          <div className="xl:col-span-2">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+          <div className="lg:col-span-2">
             <ChartsSection
               shopwiseData={data?.shopwiseChart ?? []}
               categoryData={data?.categoryChart ?? []}
               loading={loading}
             />
           </div>
-          <div className="xl:col-span-1">
+          <div className="lg:col-span-1">
             <QuickActionsPanel
               alerts={data?.stockAlerts ?? []}
               loading={loading}
