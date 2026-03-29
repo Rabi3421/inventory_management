@@ -117,6 +117,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     await product.save();
 
     const log = await InventoryLogModel.create({
+      shopId:       product.shopId,
       productId:    product._id,
       productName:  product.name,
       productSku:   product.sku,

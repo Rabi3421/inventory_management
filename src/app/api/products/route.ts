@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = request.nextUrl;
     const search = searchParams.get('search')?.trim() ?? '';
+    const shopId = searchParams.get('shopId')?.trim() ?? '';
     const page = Math.max(1, Number(searchParams.get('page') ?? 1));
     const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit') ?? 50)));
     const sort = searchParams.get('sort') ?? 'createdAt';
@@ -39,6 +40,7 @@ export async function GET(request: NextRequest) {
     const sortField = allowedSorts.includes(sort) ? sort : 'createdAt';
 
     const filter: Record<string, unknown> = {};
+    if (shopId) filter.shopId = shopId;
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -56,8 +58,10 @@ export async function GET(request: NextRequest) {
       ProductModel.countDocuments(filter),
     ]);
 
-    // Stats (always from full collection, not filtered)
+    // Stats — scoped to the same shopId filter (or global if no shopId)
+    const statsFilter: Record<string, unknown> = shopId ? { shopId } : {};
     const [statsResult] = await ProductModel.aggregate([
+      { $match: statsFilter },
       {
         $group: {
           _id: null,
@@ -109,13 +113,18 @@ export async function POST(request: NextRequest) {
     const quantity = Math.floor(Number(body.quantity));
     const skuRaw = String(body.sku ?? '').trim().toUpperCase();
     const sku = skuRaw || generateSKU();
+    const shopId = String(body.shopId ?? '').trim();
 
     if (!name) return NextResponse.json({ error: 'Product name is required.' }, { status: 400 });
+    if (!shopId) return NextResponse.json({ error: 'shopId is required.' }, { status: 400 });
     if (isNaN(price) || price < 0) return NextResponse.json({ error: 'Invalid price.' }, { status: 400 });
     if (isNaN(quantity) || quantity < 1) return NextResponse.json({ error: 'Quantity must be at least 1.' }, { status: 400 });
 
-    // ── Upsert: if a product with the same name already exists, add to its qty ──
-    const existingByName = await ProductModel.findOne({ name: { $regex: `^${name}$`, $options: 'i' } });
+    // ── Upsert: if a product with the same name already exists in the same shop, add to its qty ──
+    const existingByName = await ProductModel.findOne({
+      shopId,
+      name: { $regex: `^${name}$`, $options: 'i' },
+    });
 
     if (existingByName) {
       const prevCounter = existingByName.unitCounter ?? existingByName.totalQty;
@@ -127,6 +136,7 @@ export async function POST(request: NextRequest) {
 
       // Record restock movement in the inventory ledger
       await InventoryLogModel.create({
+        shopId,
         productId: existingByName._id,
         productName: existingByName.name,
         productSku: existingByName.sku,
@@ -172,6 +182,7 @@ export async function POST(request: NextRequest) {
     }
 
     const product = await ProductModel.create({
+      shopId,
       sku,
       name,
       description,
@@ -183,6 +194,7 @@ export async function POST(request: NextRequest) {
 
     // Record initial purchase in the inventory ledger
     await InventoryLogModel.create({
+      shopId,
       productId: product._id,
       productName: product.name,
       productSku: product.sku,

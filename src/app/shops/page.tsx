@@ -83,12 +83,12 @@ function InventoryDrawer({ shop, onClose }: { shop: ShopItem; onClose: () => voi
 
   useEffect(() => {
     setLoading(true);
-    fetch('/api/inventory?limit=200')
+    fetch(`/api/inventory?limit=200&shopId=${encodeURIComponent(shop._id)}`)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => setProducts(data.items ?? []))
       .catch(() => setProducts([]))
       .finally(() => setLoading(false));
-  }, []);
+  }, [shop._id]);
 
   const filtered = useMemo(() => {
     let data = [...products];

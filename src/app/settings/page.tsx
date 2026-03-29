@@ -138,6 +138,60 @@ export default function SettingsPage() {
   const [exportingAudit, setExportingAudit]       = useState(false);
   const [dangerConfirm, setDangerConfirm]         = useState('');
 
+  // Data migration
+  interface OrphanProduct { _id: string; sku: string; name: string; totalQty: number; availableQty: number; }
+  interface MigShop { _id: string; name: string; location: string; }
+  const [migShops, setMigShops]           = useState<MigShop[]>([]);
+  const [migShopId, setMigShopId]         = useState('');
+  const [migOrphans, setMigOrphans]       = useState<OrphanProduct[]>([]);
+  const [migLoading, setMigLoading]       = useState(false);
+  const [migRunning, setMigRunning]       = useState(false);
+  const [migResult, setMigResult]         = useState<{ productsUpdated: number; logsUpdated: number } | null>(null);
+  const [migError, setMigError]           = useState('');
+  const [migChecked, setMigChecked]       = useState(false);
+
+  const checkOrphans = useCallback(async () => {
+    setMigLoading(true); setMigError(''); setMigResult(null); setMigChecked(false);
+    try {
+      const [orphanRes, shopRes] = await Promise.all([
+        fetch('/api/migrate', { credentials: 'include' }),
+        fetch('/api/shops', { credentials: 'include' }),
+      ]);
+      const orphanData = await orphanRes.json();
+      const shopData   = await shopRes.json();
+      setMigOrphans(orphanData.products ?? []);
+      const shopList: MigShop[] = (shopData.items ?? []).map((s: MigShop) => ({ _id: s._id, name: s.name, location: s.location }));
+      setMigShops(shopList);
+      if (shopList.length > 0 && !migShopId) setMigShopId(shopList[0]._id);
+      setMigChecked(true);
+    } catch {
+      setMigError('Failed to check for orphaned products.');
+    } finally {
+      setMigLoading(false);
+    }
+  }, [migShopId]);
+
+  const runMigration = useCallback(async () => {
+    if (!migShopId) return;
+    setMigRunning(true); setMigError(''); setMigResult(null);
+    try {
+      const res  = await fetch('/api/migrate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ shopId: migShopId }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setMigError(data.error ?? 'Migration failed.'); return; }
+      setMigResult({ productsUpdated: data.productsUpdated, logsUpdated: data.logsUpdated });
+      setMigOrphans([]);
+    } catch {
+      setMigError('Network error during migration.');
+    } finally {
+      setMigRunning(false);
+    }
+  }, [migShopId]);
+
   // Load settings on mount
   const fetchSettings = useCallback(async () => {
     setLoading(true); setLoadError('');
@@ -431,6 +485,95 @@ export default function SettingsPage() {
             </SectionCard>
 
             {saveError && <p className="text-sm text-red-600 text-right">{saveError}</p>}
+
+            {/* Data Migration */}
+            <SectionCard title="Data Migration" description="Assign existing products that are missing a shop to a specific shop">
+              <div className="py-3 space-y-4">
+                {!migChecked ? (
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={checkOrphans}
+                      disabled={migLoading}
+                      className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-slate-700 hover:bg-slate-800 disabled:opacity-60 text-white rounded-lg transition-all"
+                    >
+                      {migLoading
+                        ? <><Icon name="ArrowPathIcon" size={14} className="animate-spin" />Checking…</>
+                        : <><Icon name="MagnifyingGlassIcon" size={14} />Check for unassigned products</>}
+                    </button>
+                    <p className="text-xs text-slate-400">Click to find products with no shop assigned</p>
+                  </div>
+                ) : migOrphans.length === 0 ? (
+                  <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <Icon name="CheckCircleIcon" size={15} className="text-emerald-500" />
+                    <p className="text-sm text-emerald-700 font-medium">All products have a shop assigned. No migration needed.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+                      <Icon name="ExclamationTriangleIcon" size={15} className="text-amber-500 shrink-0" />
+                      <p className="text-sm text-amber-800 font-medium">
+                        {migOrphans.length} product{migOrphans.length > 1 ? 's' : ''} found with no shop assigned
+                      </p>
+                    </div>
+
+                    {/* Orphan list */}
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                      <div className="grid grid-cols-3 gap-4 px-4 py-2 bg-slate-50 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                        <span>SKU</span><span>Product</span><span className="text-right">Qty</span>
+                      </div>
+                      {migOrphans.map(p => (
+                        <div key={p._id} className="grid grid-cols-3 gap-4 px-4 py-2.5 border-t border-slate-100 text-sm">
+                          <span className="font-mono text-xs text-slate-500 truncate">{p.sku}</span>
+                          <span className="text-slate-700 truncate">{p.name}</span>
+                          <span className="text-right text-slate-500">{p.availableQty}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Shop selector + run */}
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">Assign all to shop</label>
+                        <select
+                          value={migShopId}
+                          onChange={e => setMigShopId(e.target.value)}
+                          className={`${ib} bg-white w-64`}
+                        >
+                          {migShops.map(s => (
+                            <option key={s._id} value={s._id}>{s.name} — {s.location}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <button
+                        onClick={runMigration}
+                        disabled={migRunning || !migShopId}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white rounded-lg shadow-sm transition-all"
+                      >
+                        {migRunning
+                          ? <><Icon name="ArrowPathIcon" size={14} className="animate-spin" />Migrating…</>
+                          : <><Icon name="ArrowUpTrayIcon" size={14} />Run Migration</>}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {migResult && (
+                  <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <Icon name="CheckCircleIcon" size={15} className="text-emerald-500" />
+                    <p className="text-sm text-emerald-700 font-medium">
+                      Done! {migResult.productsUpdated} product{migResult.productsUpdated !== 1 ? 's' : ''} and {migResult.logsUpdated} log entr{migResult.logsUpdated !== 1 ? 'ies' : 'y'} updated.
+                    </p>
+                  </div>
+                )}
+                {migError && (
+                  <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-xl">
+                    <Icon name="ExclamationCircleIcon" size={15} className="text-red-500" />
+                    <p className="text-sm text-red-700">{migError}</p>
+                  </div>
+                )}
+              </div>
+            </SectionCard>
+
             <div className="flex justify-end gap-3">
               <SaveButton saving={profileSaving} saved={profileSaved} onClick={handleProfileSave} label="Save Profile" />
               <SaveButton saving={saving} saved={saved} onClick={handleSave} label="Save Settings" />

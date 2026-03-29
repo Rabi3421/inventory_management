@@ -50,23 +50,14 @@ export async function GET() {
           },
         ]),
 
-        // 2. Shop-wise inventory breakdown — use product price-ranges as proxy for "shops"
-        //    Since products aren't shop-specific in the current schema, we bucket
-        //    them into 6 equal segments sorted by name to produce chart data.
+        // 2. Per-shop inventory breakdown — group products by shopId
         ProductModel.aggregate([
-          { $sort: { name: 1 } },
           {
-            $bucket: {
-              groupBy: { $toLower: { $substrCP: ['$name', 0, 1] } },
-              boundaries: ['a', 'e', 'i', 'm', 'q', 'u', '{'],
-              default: 'Other',
-              output: {
-                label:      { $first: { $literal: '' } },
-                inStock:    { $sum: { $cond: [{ $gt: ['$availableQty', 20] }, '$availableQty', 0] } },
-                lowStock:   { $sum: { $cond: [{ $and: [{ $gt: ['$availableQty', 0] }, { $lte: ['$availableQty', 20] }] }, '$availableQty', 0] } },
-                outOfStock: { $sum: { $cond: [{ $eq: ['$availableQty', 0] }, 1, 0] } },
-                count:      { $sum: 1 },
-              },
+            $group: {
+              _id: '$shopId',
+              inStock:    { $sum: { $cond: [{ $gt: ['$availableQty', 20] }, '$availableQty', 0] } },
+              lowStock:   { $sum: { $cond: [{ $and: [{ $gt: ['$availableQty', 0] }, { $lte: ['$availableQty', 20] }] }, '$availableQty', 0] } },
+              outOfStock: { $sum: { $cond: [{ $eq: ['$availableQty', 0] }, 1, 0] } },
             },
           },
         ]),
@@ -98,33 +89,25 @@ export async function GET() {
     // ── Real shops for shopwise chart ──────────────────────────────────────────
     const shops = await ShopModel.find({ status: 'Active' }).sort({ name: 1 }).lean();
 
-    // If we have real shops, build per-shop data from products
-    // Since products aren't scoped per shop in this schema, distribute evenly
+    // Build a lookup: shopId → product stats from the per-shop aggregation
+    const shopStatsMap = new Map(shopAgg.map((s: { _id: string; inStock: number; lowStock: number; outOfStock: number }) => [s._id, s]));
+
     let shopwiseChart: { shop: string; inStock: number; lowStock: number; outOfStock: number }[] = [];
 
     if (shops.length > 0) {
-      // Get total product counts split by status
-      const kpi = kpiAgg[0] ?? { totalSKUs: 0, totalUnits: 0, availableUnits: 0, totalValue: 0, lowStock: 0, outOfStock: 0 };
-      const inStockUnits = Math.max(0, kpi.availableUnits - kpi.lowStock * 10);
-
-      shopwiseChart = shops.map((shop, i) => {
-        const factor = 1 + (i % 3) * 0.15;
+      shopwiseChart = shops.map(shop => {
+        const id = shop._id.toString();
+        const s = shopStatsMap.get(id) ?? { inStock: 0, lowStock: 0, outOfStock: 0 };
         return {
           shop: shop.name,
-          inStock:    Math.round((inStockUnits / shops.length) * factor),
-          lowStock:   Math.round((kpi.lowStock  / shops.length) * 10 * (1 + (i % 2) * 0.3)),
-          outOfStock: Math.round((kpi.outOfStock / shops.length) * (1 + ((i + 1) % 3) * 0.2)),
+          inStock:    s.inStock    ?? 0,
+          lowStock:   s.lowStock   ?? 0,
+          outOfStock: s.outOfStock ?? 0,
         };
       });
     } else {
-      // Fallback: use the bucket aggregation
-      const bucketLabels = ['A–D', 'E–H', 'I–L', 'M–P', 'Q–T', 'U–Z', 'Other'];
-      shopwiseChart = shopAgg.map((b, i) => ({
-        shop:       bucketLabels[i] ?? String(b._id),
-        inStock:    b.inStock    ?? 0,
-        lowStock:   b.lowStock   ?? 0,
-        outOfStock: b.outOfStock ?? 0,
-      }));
+      // Fallback: nothing to show
+      shopwiseChart = [];
     }
 
     // ── Category chart — bucket by price range as proxy ───────────────────────

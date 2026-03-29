@@ -2,6 +2,7 @@ import type { HydratedDocument, Model } from 'mongoose';
 import { Schema, models, model } from 'mongoose';
 
 export interface Product {
+  shopId: string;        // which shop this product belongs to
   sku: string;
   name: string;
   description: string;
@@ -15,6 +16,12 @@ export interface Product {
 
 const productSchema = new Schema<Product>(
   {
+    shopId: {
+      type: String,
+      required: true,
+      trim: true,
+      index: true,
+    },
     sku: {
       type: String,
       required: true,
@@ -64,5 +71,10 @@ const productSchema = new Schema<Product>(
 
 export type ProductDocument = HydratedDocument<Product>;
 
-export const ProductModel =
-  (models.Product as Model<Product>) || model<Product>('Product', productSchema);
+// Delete the cached model so that schema changes (e.g. new fields like shopId)
+// are always picked up after a hot-reload instead of using the stale cached schema.
+if (models.Product) {
+  delete (models as Record<string, unknown>).Product;
+}
+
+export const ProductModel = model<Product>('Product', productSchema);

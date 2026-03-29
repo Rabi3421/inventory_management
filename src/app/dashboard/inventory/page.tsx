@@ -12,6 +12,8 @@ type SortDir = 'asc' | 'desc';
 
 interface InventoryItem {
   _id: string;
+  shopId: string;
+  shopName: string;
   sku: string;
   name: string;
   description: string;
@@ -105,6 +107,8 @@ export default function InventoryPage() {
   const [search, setSearch]             = useState('');
   const [debouncedSearch, setDebounced] = useState('');
   const [statusFilter, setStatusFilter] = useState<StockStatus | 'all'>('all');
+  const [shopFilter, setShopFilter]     = useState('all');
+  const [shops, setShops]               = useState<{ _id: string; name: string }[]>([]);
   const [sortKey, setSortKey]           = useState<SortKey>('createdAt');
   const [sortDir, setSortDir]           = useState<SortDir>('desc');
   const [page, setPage]                 = useState(1);
@@ -126,6 +130,14 @@ export default function InventoryPage() {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Fetch shops once for the filter dropdown
+  useEffect(() => {
+    fetch('/api/shops', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => setShops((data.items ?? []).map((s: { _id: string; name: string }) => ({ _id: s._id, name: s.name }))))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => { setDebounced(search); setPage(1); }, 350);
@@ -137,6 +149,7 @@ export default function InventoryPage() {
     setLoadError('');
     try {
       const p = new URLSearchParams({ page: String(page), limit: '50', sort: sortKey, dir: sortDir, search: debouncedSearch, status: statusFilter });
+      if (shopFilter !== 'all') p.set('shopId', shopFilter);
       const res = await fetch(`/api/inventory?${p}`, { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to load inventory');
       const data = await res.json();
@@ -149,7 +162,7 @@ export default function InventoryPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, sortKey, sortDir, debouncedSearch, statusFilter]);
+  }, [page, sortKey, sortDir, debouncedSearch, statusFilter, shopFilter]);
 
   useEffect(() => { fetchInventory(); }, [fetchInventory]);
 
@@ -272,6 +285,13 @@ export default function InventoryPage() {
               <option value="low-stock">Low Stock</option>
               <option value="out-of-stock">Out of Stock</option>
             </select>
+            <select value={shopFilter} onChange={e => { setShopFilter(e.target.value); setPage(1); }}
+              className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+              <option value="all">All Shops</option>
+              {shops.map(s => (
+                <option key={s._id} value={s._id}>{s.name}</option>
+              ))}
+            </select>
           </div>
 
           {loadError && (
@@ -286,6 +306,7 @@ export default function InventoryPage() {
                 <tr className="bg-slate-50 border-b border-slate-100">
                   {([
                     { key: 'name',         label: 'Product',       w: 'min-w-[220px]' },
+                    { key: 'shop',         label: 'Shop',          w: 'min-w-[130px]' },
                     { key: 'price',        label: 'Price',         w: '' },
                     { key: 'totalQty',     label: 'Total Stock',   w: '' },
                     { key: 'availableQty', label: 'Available',     w: '' },
@@ -311,14 +332,14 @@ export default function InventoryPage() {
                 {isLoading
                   ? Array.from({ length: 5 }).map((_, i) => (
                       <tr key={i} className="animate-pulse">
-                        {Array.from({ length: 9 }).map((__, j) => (
+                        {Array.from({ length: 10 }).map((__, j) => (
                           <td key={j} className="px-4 py-4"><div className="h-3 bg-slate-100 rounded w-full max-w-[110px]" /></td>
                         ))}
                       </tr>
                     ))
                   : items.length === 0
                   ? (
-                    <tr><td colSpan={9} className="px-5 py-14 text-center">
+                    <tr><td colSpan={10} className="px-5 py-14 text-center">
                       <Icon name="ClipboardDocumentListIcon" size={32} className="text-slate-200 mx-auto mb-3" />
                       <p className="text-sm font-medium text-slate-400">No inventory items found</p>
                       <p className="text-xs text-slate-300 mt-1">Add products from the Products page to see them here</p>
@@ -341,6 +362,13 @@ export default function InventoryPage() {
                                   {item.description && <p className="text-[10px] text-slate-400 truncate max-w-[180px]">{item.description}</p>}
                                 </div>
                               </div>
+                            </td>
+                            {/* Shop */}
+                            <td className="px-4 py-3.5">
+                              <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-100 whitespace-nowrap">
+                                <Icon name="BuildingStorefrontIcon" size={11} className="shrink-0" />
+                                {item.shopName}
+                              </span>
                             </td>
                             {/* Price */}
                             <td className="px-4 py-3.5">

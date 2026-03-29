@@ -49,6 +49,12 @@ interface EditState {
 type SortKey = 'name' | 'price' | 'totalQty' | 'availableQty' | 'createdAt';
 type SortDir = 'asc' | 'desc';
 
+interface ShopOption {
+  _id: string;
+  name: string;
+  location: string;
+}
+
 interface PrintTarget {
   productId: string;
   productName: string;
@@ -103,6 +109,10 @@ function FormField({
 // ─── Page component ───────────────────────────────────────────────────────────
 
 export default function ProductsPage() {
+  // ── Shop state ────────────────────────────────────────────────────────────
+  const [shops, setShops] = useState<ShopOption[]>([]);
+  const [selectedShopId, setSelectedShopId] = useState('');
+
   // ── Data state ────────────────────────────────────────────────────────────
   const [products, setProducts] = useState<Product[]>([]);
   const [stats, setStats] = useState<Stats>({ totalProducts: 0, totalUnits: 0, availableUnits: 0, catalogValue: 0 });
@@ -166,6 +176,23 @@ export default function ProductsPage() {
       } catch { /* silent */ }
     }, 250);
   }, []);
+  // ── Fetch available shops ─────────────────────────────────────────────────
+  useEffect(() => {
+    fetch('/api/shops', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => {
+        const list: ShopOption[] = (data.items ?? []).map((s: ShopOption) => ({
+          _id: s._id,
+          name: s.name,
+          location: s.location,
+        }));
+        setShops(list);
+        if (list.length > 0 && !selectedShopId) setSelectedShopId(list[0]._id);
+      })
+      .catch(() => setShops([]));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     searchTimeoutRef.current = setTimeout(() => {
@@ -224,6 +251,7 @@ export default function ProductsPage() {
 
   const validateForm = (): boolean => {
     const errors: Partial<Record<keyof FormState, string>> = {};
+    if (!selectedShopId) { setApiError('Please select a shop before adding a product.'); return false; }
     if (!form.name.trim()) errors.name = 'Product name is required.';
     const qty = Number(form.quantity);
     if (!form.quantity || isNaN(qty) || qty < 1) errors.quantity = 'Enter a valid quantity (≥ 1).';
@@ -245,6 +273,7 @@ export default function ProductsPage() {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
+          shopId: selectedShopId,
           name: form.name.trim(),
           description: form.description.trim(),
           price: Number(form.price),
@@ -281,7 +310,7 @@ export default function ProductsPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [form, fetchProducts]);
+  }, [form, fetchProducts, selectedShopId]);
 
   // ── Edit ──────────────────────────────────────────────────────────────────
   const openEdit = (p: Product) => {
@@ -464,6 +493,27 @@ export default function ProductsPage() {
                 {apiError}
               </div>
             )}
+
+            {/* Shop selector */}
+            <div className="mb-4">
+              <FormField label="Assign to Shop" required>
+                {shops.length === 0 ? (
+                  <div className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-400 select-none">
+                    Loading shops…
+                  </div>
+                ) : (
+                  <select
+                    value={selectedShopId}
+                    onChange={e => setSelectedShopId(e.target.value)}
+                    className={inputBase}
+                  >
+                    {shops.map(s => (
+                      <option key={s._id} value={s._id}>{s.name} — {s.location}</option>
+                    ))}
+                  </select>
+                )}
+              </FormField>
+            </div>
 
             {/* Row 1 */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">

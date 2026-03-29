@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { ProductModel } from '@/lib/models/Product';
 import { InventoryLogModel } from '@/lib/models/InventoryLog';
+import { ShopModel } from '@/lib/models/Shop';
 
 /**
  * GET /api/inventory
@@ -14,6 +15,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = request.nextUrl;
     const search  = searchParams.get('search')?.trim() ?? '';
+    const shopId  = searchParams.get('shopId')?.trim() ?? '';
     const status  = searchParams.get('status') ?? 'all';
     const page    = Math.max(1, Number(searchParams.get('page') ?? 1));
     const limit   = Math.min(100, Math.max(1, Number(searchParams.get('limit') ?? 50)));
@@ -24,6 +26,7 @@ export async function GET(request: NextRequest) {
 
     // Build filter
     const filter: Record<string, unknown> = {};
+    if (shopId) filter.shopId = shopId;
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -43,8 +46,10 @@ export async function GET(request: NextRequest) {
       ProductModel.countDocuments(filter),
     ]);
 
-    // Aggregate stats from full collection (ignoring filter)
+    // Aggregate stats — scoped to the same shopId (or global if no shopId)
+    const statsBaseFilter: Record<string, unknown> = shopId ? { shopId } : {};
     const [statsResult] = await ProductModel.aggregate([
+      { $match: statsBaseFilter },
       {
         $group: {
           _id: null,
@@ -79,6 +84,11 @@ export async function GET(request: NextRequest) {
 
     const logMap = new Map(lastLogs.map(l => [l._id.toString(), l]));
 
+    // Build a shopId → shopName lookup for display
+    const uniqueShopIds = [...new Set(products.map(p => p.shopId).filter(Boolean))];
+    const shops = await ShopModel.find({ _id: { $in: uniqueShopIds } }).select('_id name').lean();
+    const shopNameMap = new Map(shops.map(s => [s._id.toString(), s.name]));
+
     const items = products.map(p => {
       const log = logMap.get(p._id.toString());
       const avail = p.availableQty;
@@ -88,6 +98,8 @@ export async function GET(request: NextRequest) {
 
       return {
         _id:           p._id.toString(),
+        shopId:        p.shopId ?? '',
+        shopName:      shopNameMap.get(p.shopId) ?? 'Unassigned',
         sku:           p.sku,
         name:          p.name,
         description:   p.description ?? '',

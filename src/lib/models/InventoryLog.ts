@@ -15,6 +15,7 @@ import { Schema, models, model } from 'mongoose';
 export type LogType = 'purchase' | 'restock' | 'sale' | 'adjustment' | 'return';
 
 export interface InventoryLog {
+  shopId: string;        // which shop this log entry belongs to
   productId: Types.ObjectId;
   productName: string;   // denormalised for fast display
   productSku: string;    // denormalised for fast display
@@ -29,6 +30,12 @@ export interface InventoryLog {
 
 const inventoryLogSchema = new Schema<InventoryLog>(
   {
+    shopId: {
+      type: String,
+      required: true,
+      trim: true,
+      index: true,
+    },
     productId: {
       type: Schema.Types.ObjectId,
       ref: 'Product',
@@ -56,6 +63,9 @@ inventoryLogSchema.index({ productId: 1, createdAt: -1 });
 
 export type InventoryLogDocument = HydratedDocument<InventoryLog>;
 
-export const InventoryLogModel =
-  (models.InventoryLog as Model<InventoryLog>) ||
-  model<InventoryLog>('InventoryLog', inventoryLogSchema);
+// Delete the cached model so shopId schema changes are always applied.
+if (models.InventoryLog) {
+  delete (models as Record<string, unknown>).InventoryLog;
+}
+
+export const InventoryLogModel = model<InventoryLog>('InventoryLog', inventoryLogSchema);

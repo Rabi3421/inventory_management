@@ -29,11 +29,13 @@ export async function GET(request: NextRequest) {
 
     const shops = await ShopModel.find(filter).sort({ createdAt: -1 }).lean();
 
-    // Aggregate global product stats (shared across all shops for now)
-    const [stats] = await ProductModel.aggregate([
+    // Aggregate inventory stats PER SHOP — each shop only sees its own products
+    const shopIds = shops.map(s => s._id.toString());
+    const perShopStats = await ProductModel.aggregate([
+      { $match: { shopId: { $in: shopIds } } },
       {
         $group: {
-          _id: null,
+          _id: '$shopId',
           totalSKUs:      { $sum: 1 },
           totalStock:     { $sum: '$totalQty' },
           availableStock: { $sum: '$availableQty' },
@@ -53,7 +55,12 @@ export async function GET(request: NextRequest) {
       },
     ]);
 
-    const globalStats = stats ?? {
+    // Build a quick lookup map  shopId → stats
+    const statsMap = new Map(
+      perShopStats.map(s => [s._id, s]),
+    );
+
+    const emptyStats = {
       totalSKUs: 0, totalStock: 0, availableStock: 0,
       totalValue: 0, lowStockCount: 0, outOfStockCount: 0,
     };
@@ -69,6 +76,7 @@ export async function GET(request: NextRequest) {
     const items = shops.map(shop => {
       const id = shop._id.toString();
       const admin = shopAdminMap.get(id);
+      const shopStats = statsMap.get(id) ?? emptyStats;
       return {
         _id:            id,
         name:           shop.name,
@@ -78,13 +86,13 @@ export async function GET(request: NextRequest) {
         status:         shop.status,
         createdAt:      shop.createdAt,
         updatedAt:      shop.updatedAt,
-        // Stats are shared from the global product pool
-        totalSKUs:      globalStats.totalSKUs,
-        totalStock:     globalStats.totalStock,
-        availableStock: globalStats.availableStock,
-        totalValue:     globalStats.totalValue,
-        lowStockAlerts: globalStats.lowStockCount,
-        outOfStock:     globalStats.outOfStockCount,
+        // Per-shop inventory stats
+        totalSKUs:      shopStats.totalSKUs,
+        totalStock:     shopStats.totalStock,
+        availableStock: shopStats.availableStock,
+        totalValue:     shopStats.totalValue,
+        lowStockAlerts: shopStats.lowStockCount,
+        outOfStock:     shopStats.outOfStockCount,
         // Linked shop admin
         adminName:  admin?.name  ?? null,
         adminEmail: admin?.email ?? null,

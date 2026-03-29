@@ -67,9 +67,10 @@ interface UserForm {
   shopId: string; shopName: string;
   password: string; confirmPassword: string;
 }
-function UserModal({ initial, shops, onClose, onSaved }: {
+function UserModal({ initial, shops, prefilledShop, onClose, onSaved }: {
   initial?: UserItem;
   shops: ShopOption[];
+  prefilledShop?: ShopOption;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -78,8 +79,8 @@ function UserModal({ initial, shops, onClose, onSaved }: {
     name:            initial?.name     ?? '',
     email:           initial?.email    ?? '',
     role:            initial?.role     ?? 'shopadmin',
-    shopId:          initial?.shopId   ?? '',
-    shopName:        initial?.shopName ?? '',
+    shopId:          initial?.shopId   ?? prefilledShop?._id   ?? '',
+    shopName:        initial?.shopName ?? prefilledShop?.name  ?? '',
     password:        '',
     confirmPassword: '',
   });
@@ -152,7 +153,7 @@ function UserModal({ initial, shops, onClose, onSaved }: {
               <Icon name={isEdit ? 'UserIcon' : 'UserPlusIcon'} size={18} className="text-indigo-600" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-slate-800">{isEdit ? 'Edit User' : 'Add New User'}</h3>
+              <h3 className="text-base font-semibold text-slate-800">{isEdit ? 'Edit User' : prefilledShop ? `Create Admin — ${prefilledShop.name}` : 'Add New User'}</h3>
               <p className="text-xs text-slate-400 mt-0.5">{isEdit ? 'Update credentials & access' : 'Create login credentials'}</p>
             </div>
           </div>
@@ -377,6 +378,75 @@ function DeleteConfirmModal({ user, onClose, onDeleted }: { user: UserItem; onCl
   );
 }
 
+// ─── Shop Coverage Card ───────────────────────────────────────────────────────
+function ShopCoverageCard({
+  shop,
+  admin,
+  onCreateAdmin,
+  onEdit,
+  onResetPassword,
+  onDelete,
+}: {
+  shop: ShopOption;
+  admin: UserItem | undefined;
+  onCreateAdmin: (shop: ShopOption) => void;
+  onEdit: (user: UserItem) => void;
+  onResetPassword: (user: UserItem) => void;
+  onDelete: (user: UserItem) => void;
+}) {
+  const hasCred = !!admin;
+  return (
+    <div className={`bg-white rounded-xl border shadow-sm p-4 flex flex-col gap-3 ${hasCred ? 'border-emerald-100' : 'border-amber-200'}`}>
+      {/* Shop header */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${hasCred ? 'bg-emerald-50' : 'bg-amber-50'}`}>
+            <Icon name="BuildingStorefrontIcon" size={16} className={hasCred ? 'text-emerald-600' : 'text-amber-500'} />
+          </div>
+          <span className="text-sm font-semibold text-slate-800 truncate">{shop.name}</span>
+        </div>
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${hasCred ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+          {hasCred ? '✓ Has Admin' : '⚠ No Admin'}
+        </span>
+      </div>
+
+      {/* Admin info or empty state */}
+      {hasCred ? (
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-slate-700 truncate">{admin.name}</p>
+            <p className="text-[11px] text-slate-400 truncate">{admin.email}</p>
+            <span className={`mt-1 inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${admin.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${admin.isActive ? 'bg-emerald-500' : 'bg-red-400'}`} />
+              {admin.isActive ? 'Active' : 'Suspended'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button onClick={() => onEdit(admin)} title="Edit Admin"
+              className="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-all">
+              <Icon name="PencilSquareIcon" size={13} />
+            </button>
+            <button onClick={() => onResetPassword(admin)} title="Reset Password"
+              className="p-1.5 rounded-lg text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-all">
+              <Icon name="KeyIcon" size={13} />
+            </button>
+            <button onClick={() => onDelete(admin)} title="Delete Admin"
+              className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all">
+              <Icon name="TrashIcon" size={13} />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => onCreateAdmin(shop)}
+          className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-all">
+          <Icon name="UserPlusIcon" size={13} />
+          Create Admin Account
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function UsersPage() {
   const [users, setUsers]           = useState<UserItem[]>([]);
@@ -391,6 +461,7 @@ export default function UsersPage() {
   const [sortDir, setSortDir]       = useState<SortDir>('asc');
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [showAddModal, setShowAddModal] = useState(false);
+  const [addForShop, setAddForShop]     = useState<ShopOption | null>(null);
   const [editUser, setEditUser]         = useState<UserItem | null>(null);
   const [resetUser, setResetUser]       = useState<UserItem | null>(null);
   const [deleteUser, setDeleteUser]     = useState<UserItem | null>(null);
@@ -420,6 +491,22 @@ export default function UsersPage() {
     const t = setTimeout(fetchUsers, 300);
     return () => clearTimeout(t);
   }, [fetchUsers]);
+
+  // Map shopId → the first shopadmin assigned to that shop
+  const shopAdminMap = useMemo(() => {
+    const map = new Map<string, UserItem>();
+    users.forEach(u => {
+      if (u.role === 'shopadmin' && u.shopId && !map.has(u.shopId)) {
+        map.set(u.shopId, u);
+      }
+    });
+    return map;
+  }, [users]);
+
+  const handleCreateAdminForShop = (shop: ShopOption) => {
+    setAddForShop(shop);
+    setShowAddModal(true);
+  };
 
   const sorted = useMemo(() => {
     const data = [...users];
@@ -505,6 +592,36 @@ export default function UsersPage() {
             </div>
           ))}
         </div>
+
+        {/* Shop Coverage */}
+        {!loading && shops.length > 0 && (
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Icon name="BuildingStorefrontIcon" size={16} className="text-slate-500" />
+                <h2 className="text-sm font-semibold text-slate-800">Shop Admin Coverage</h2>
+                <span className="text-xs font-semibold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{shops.length} shops</span>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-slate-500">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" />{shops.filter(s => shopAdminMap.has(s._id)).length} covered</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" />{shops.filter(s => !shopAdminMap.has(s._id)).length} missing</span>
+              </div>
+            </div>
+            <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {shops.map(shop => (
+                <ShopCoverageCard
+                  key={shop._id}
+                  shop={shop}
+                  admin={shopAdminMap.get(shop._id)}
+                  onCreateAdmin={handleCreateAdminForShop}
+                  onEdit={setEditUser}
+                  onResetPassword={setResetUser}
+                  onDelete={setDeleteUser}
+                />
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Error */}
         {error && (
@@ -672,7 +789,14 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {showAddModal && <UserModal shops={shops} onClose={() => setShowAddModal(false)} onSaved={fetchUsers} />}
+      {showAddModal && (
+        <UserModal
+          shops={shops}
+          prefilledShop={addForShop ?? undefined}
+          onClose={() => { setShowAddModal(false); setAddForShop(null); }}
+          onSaved={fetchUsers}
+        />
+      )}
       {editUser     && <UserModal shops={shops} initial={editUser} onClose={() => setEditUser(null)} onSaved={fetchUsers} />}
       {resetUser    && <ResetPasswordModal user={resetUser} onClose={() => setResetUser(null)} onSaved={fetchUsers} />}
       {deleteUser   && <DeleteConfirmModal user={deleteUser} onClose={() => setDeleteUser(null)} onDeleted={fetchUsers} />}
