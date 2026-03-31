@@ -1,5 +1,6 @@
 'use client';
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import ShopAdminLayout from '@/components/ShopAdminLayout';
 import Icon from '@/components/ui/AppIcon';
 import { useAuth } from '@/contexts/AuthContext';
@@ -255,16 +256,25 @@ function AddProductModal({ shopId, shopName, onClose, onSuccess }: AddProductMod
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ShopAdminInventoryPage() {
+  return (
+    <Suspense>
+      <InventoryPageInner />
+    </Suspense>
+  );
+}
+
+function InventoryPageInner() {
   const { user } = useAuth();
   const shopId   = user?.shopId   ?? '';
   const shopName = user?.shopName ?? 'My Shop';
+  const searchParams = useSearchParams();
 
   const [items, setItems]               = useState<InventoryItem[]>([]);
   const [stats, setStats]               = useState<Stats | null>(null);
   const [isLoading, setIsLoading]       = useState(true);
   const [loadError, setLoadError]       = useState('');
-  const [search, setSearch]             = useState('');
-  const [debouncedSearch, setDebounced] = useState('');
+  const [search, setSearch]             = useState(() => searchParams.get('search') ?? '');
+  const [debouncedSearch, setDebounced] = useState(() => searchParams.get('search') ?? '');
   const [statusFilter, setStatusFilter] = useState<StockStatus | 'all'>('all');
   const [sortKey, setSortKey]           = useState<SortKey>('createdAt');
   const [sortDir, setSortDir]           = useState<SortDir>('desc');
@@ -272,6 +282,14 @@ export default function ShopAdminInventoryPage() {
   const [totalPages, setTotalPages]     = useState(1);
   const [totalCount, setTotalCount]     = useState(0);
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // Sync if URL param changes (e.g. navigating from topbar search)
+  useEffect(() => {
+    const q = searchParams.get('search') ?? '';
+    if (q) { setSearch(q); setDebounced(q); setPage(1); }
+    const h = searchParams.get('highlight') ?? '';
+    if (h) setHighlightId(h);
+  }, [searchParams]);
 
   // Drawer state
   const [drawerItem, setDrawerItem]             = useState<InventoryItem | null>(null);
@@ -287,6 +305,11 @@ export default function ShopAdminInventoryPage() {
   const [adjustError, setAdjustError]   = useState('');
   const [isSavingAdj, setIsSavingAdj]   = useState(false);
   const [adjSuccess, setAdjSuccess]     = useState('');
+
+  // Highlight from topbar search click
+  const [highlightId, setHighlightId]   = useState(() => searchParams.get('highlight') ?? '');
+  const [flashId, setFlashId]           = useState('');
+  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -315,6 +338,18 @@ export default function ShopAdminInventoryPage() {
       setIsLoading(false);
     }
   }, [shopId, page, sortKey, sortDir, debouncedSearch, statusFilter]);
+
+  // Scroll to and flash highlighted row once items are loaded
+  useEffect(() => {
+    if (!highlightId || isLoading) return;
+    const el = rowRefs.current[highlightId];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setFlashId(highlightId);
+      const t = setTimeout(() => { setFlashId(''); setHighlightId(''); }, 2000);
+      return () => clearTimeout(t);
+    }
+  }, [highlightId, isLoading, items]);
 
   useEffect(() => { fetchInventory(); }, [fetchInventory]);
 
@@ -517,9 +552,14 @@ export default function ShopAdminInventoryPage() {
                   : items.map(item => {
                       const cfg = STATUS_CONFIG[item.stockStatus] ?? STATUS_CONFIG['in-stock'];
                       const lc  = LOG_CONFIG[item.lastType] ?? LOG_CONFIG['adjustment'];
-                      const isActive = drawerItem?._id === item._id;
+                      const isActive    = drawerItem?._id === item._id;
+                      const isFlashing  = flashId === item._id;
                       return (
-                        <tr key={item._id} className={`transition-colors hover:bg-slate-50/70 ${cfg.row} ${isActive ? 'bg-emerald-50/40 border-l-2 border-l-emerald-400' : ''}`}>
+                        <tr
+                          key={item._id}
+                          ref={el => { rowRefs.current[item._id] = el; }}
+                          className={`transition-all duration-500 hover:bg-slate-50/70 ${cfg.row} ${isActive ? 'bg-emerald-50/40 border-l-2 border-l-emerald-400' : ''} ${isFlashing ? '!bg-emerald-100 ring-2 ring-inset ring-emerald-400' : ''}`}
+                        >
                           {/* Product */}
                           <td className="px-4 py-3.5">
                             <div>
