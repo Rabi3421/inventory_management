@@ -35,8 +35,9 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit') ?? 50)));
     const sort = searchParams.get('sort') ?? 'createdAt';
     const dir = searchParams.get('dir') === 'asc' ? 1 : -1;
+    const expiryFilter = searchParams.get('expiry') ?? 'all'; // all | expiring-soon | expired
 
-    const allowedSorts = ['name', 'price', 'totalQty', 'availableQty', 'createdAt'];
+    const allowedSorts = ['name', 'price', 'totalQty', 'availableQty', 'createdAt', 'expiryDate'];
     const sortField = allowedSorts.includes(sort) ? sort : 'createdAt';
 
     const filter: Record<string, unknown> = {};
@@ -48,6 +49,11 @@ export async function GET(request: NextRequest) {
         { description: { $regex: search, $options: 'i' } },
       ];
     }
+
+    const now = new Date();
+    const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    if (expiryFilter === 'expired')      filter.expiryDate = { $ne: null, $lt: now };
+    if (expiryFilter === 'expiring-soon') filter.expiryDate = { $ne: null, $gte: now, $lte: in30Days };
 
     const [products, total] = await Promise.all([
       ProductModel.find(filter)
@@ -82,6 +88,8 @@ export async function GET(request: NextRequest) {
         price: p.price,
         totalQty: p.totalQty,
         availableQty: p.availableQty,
+        mfgDate: p.mfgDate ?? null,
+        expiryDate: p.expiryDate ?? null,
         createdAt: p.createdAt,
       })),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
@@ -114,6 +122,8 @@ export async function POST(request: NextRequest) {
     const skuRaw = String(body.sku ?? '').trim().toUpperCase();
     const sku = skuRaw || generateSKU();
     const shopId = String(body.shopId ?? '').trim();
+    const mfgDate    = body.mfgDate    ? new Date(body.mfgDate)    : null;
+    const expiryDate = body.expiryDate ? new Date(body.expiryDate) : null;
 
     if (!name) return NextResponse.json({ error: 'Product name is required.' }, { status: 400 });
     if (!shopId) return NextResponse.json({ error: 'shopId is required.' }, { status: 400 });
@@ -190,6 +200,8 @@ export async function POST(request: NextRequest) {
       totalQty: quantity,
       availableQty: quantity,
       unitCounter: quantity,
+      mfgDate,
+      expiryDate,
     });
 
     // Record initial purchase in the inventory ledger
@@ -221,6 +233,8 @@ export async function POST(request: NextRequest) {
           price: product.price,
           totalQty: product.totalQty,
           availableQty: product.availableQty,
+          mfgDate: product.mfgDate ?? null,
+          expiryDate: product.expiryDate ?? null,
           createdAt: product.createdAt,
         },
         unitBarcodes,

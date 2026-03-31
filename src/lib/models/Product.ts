@@ -10,6 +10,8 @@ export interface Product {
   totalQty: number;
   availableQty: number;
   unitCounter: number;  // highest unit serial number issued so far
+  mfgDate?: Date | null;
+  expiryDate?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -62,6 +64,15 @@ const productSchema = new Schema<Product>(
       required: true,
       min: 0,
       default: 0,
+    },
+    mfgDate: {
+      type: Date,
+      default: null,
+    },
+    expiryDate: {
+      type: Date,
+      default: null,
+      index: true,
     },
   },
   {

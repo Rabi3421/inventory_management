@@ -61,6 +61,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
     }
 
+    if (body.mfgDate !== undefined) {
+      updates.mfgDate = body.mfgDate ? new Date(body.mfgDate) : null;
+    }
+
+    if (body.expiryDate !== undefined) {
+      updates.expiryDate = body.expiryDate ? new Date(body.expiryDate) : null;
+    }
+
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 });
     }
@@ -84,6 +92,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         price: product.price,
         totalQty: product.totalQty,
         availableQty: product.availableQty,
+        mfgDate: product.mfgDate ?? null,
+        expiryDate: product.expiryDate ?? null,
         createdAt: product.createdAt,
       },
     });

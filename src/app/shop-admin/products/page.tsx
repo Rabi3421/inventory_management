@@ -14,6 +14,8 @@ interface Product {
   price: number;
   totalQty: number;
   availableQty: number;
+  mfgDate?: string | null;
+  expiryDate?: string | null;
   createdAt: string;
 }
 
@@ -22,6 +24,7 @@ interface ProductStats {
   totalUnits: number;
   availableUnits: number;
   catalogValue: number;
+  expiringSoon?: number;
 }
 
 interface FormState {
@@ -31,6 +34,8 @@ interface FormState {
   description: string;
   sku: string;
   skuMode: 'auto' | 'manual';
+  mfgDate: string;
+  expiryDate: string;
 }
 
 interface EditState {
@@ -40,6 +45,8 @@ interface EditState {
   availableQty: string;
   description: string;
   sku: string;
+  mfgDate: string;
+  expiryDate: string;
 }
 
 interface PrintTarget {
@@ -53,12 +60,13 @@ interface PrintTarget {
   restocked: boolean;
 }
 
-type SortKey = 'name' | 'price' | 'availableQty' | 'totalQty' | 'createdAt';
+type SortKey = 'name' | 'price' | 'availableQty' | 'totalQty' | 'createdAt' | 'expiryDate';
 type SortDir = 'asc' | 'desc';
+type ExpiryFilter = 'all' | 'expiring-soon' | 'expired';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const EMPTY_FORM: FormState = { name: '', quantity: '', price: '', description: '', sku: '', skuMode: 'auto' };
+const EMPTY_FORM: FormState = { name: '', quantity: '', price: '', description: '', sku: '', skuMode: 'auto', mfgDate: '', expiryDate: '' };
 const PAGE_SIZE = 50;
 
 const inputBase =
@@ -85,6 +93,7 @@ export default function ShopAdminProductsPage() {
   const [sortKey, setSortKey]             = useState<SortKey>('createdAt');
   const [sortDir, setSortDir]             = useState<SortDir>('desc');
   const [page, setPage]                   = useState(1);
+  const [expiryFilter, setExpiryFilter]   = useState<ExpiryFilter>('all');
 
   // Add form
   const [form, setForm]               = useState<FormState>(EMPTY_FORM);
@@ -127,7 +136,7 @@ export default function ShopAdminProductsPage() {
     setIsLoading(true);
     setLoadError('');
     try {
-      const params = new URLSearchParams({ shopId, page: String(page), limit: String(PAGE_SIZE), sort: sortKey, dir: sortDir, ...(debouncedSearch ? { search: debouncedSearch } : {}) });
+      const params = new URLSearchParams({ shopId, page: String(page), limit: String(PAGE_SIZE), sort: sortKey, dir: sortDir, ...(debouncedSearch ? { search: debouncedSearch } : {}), ...(expiryFilter !== 'all' ? { expiry: expiryFilter } : {}) });
       const res = await fetch(`/api/products?${params}`, { credentials: 'include' });
       if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error ?? 'Failed to load products.'); }
       const data = await res.json();
@@ -140,7 +149,7 @@ export default function ShopAdminProductsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [shopId, page, sortKey, sortDir, debouncedSearch]);
+  }, [shopId, page, sortKey, sortDir, debouncedSearch, expiryFilter]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
@@ -202,6 +211,8 @@ export default function ShopAdminProductsPage() {
           price:       Number(form.price),
           quantity:    Number(form.quantity),
           sku:         form.skuMode === 'manual' ? form.sku.trim() : '',
+          mfgDate:     form.mfgDate    || null,
+          expiryDate:  form.expiryDate || null,
         }),
       });
       const body = await res.json();
@@ -230,7 +241,8 @@ export default function ShopAdminProductsPage() {
   // ── Edit ──────────────────────────────────────────────────────────────────
   const openEdit = (p: Product) => {
     setEditTarget(p);
-    setEditState({ name: p.name, price: String(p.price), totalQty: String(p.totalQty), availableQty: String(p.availableQty), description: p.description, sku: p.sku });
+    const toDateInput = (d?: string | null) => d ? new Date(d).toISOString().split('T')[0] : '';
+    setEditState({ name: p.name, price: String(p.price), totalQty: String(p.totalQty), availableQty: String(p.availableQty), description: p.description, sku: p.sku, mfgDate: toDateInput(p.mfgDate), expiryDate: toDateInput(p.expiryDate) });
     setEditErrors({});
     setEditApiError('');
   };
@@ -257,7 +269,7 @@ export default function ShopAdminProductsPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ name: editState.name.trim(), description: editState.description.trim(), price: Number(editState.price), totalQty: Number(editState.totalQty), availableQty: Number(editState.availableQty), sku: editState.sku.trim() }),
+        body: JSON.stringify({ name: editState.name.trim(), description: editState.description.trim(), price: Number(editState.price), totalQty: Number(editState.totalQty), availableQty: Number(editState.availableQty), sku: editState.sku.trim(), mfgDate: editState.mfgDate || null, expiryDate: editState.expiryDate || null }),
       });
       const body = await res.json();
       if (!res.ok) { setEditApiError(body.error ?? 'Failed to update product.'); return; }
@@ -296,6 +308,19 @@ export default function ShopAdminProductsPage() {
   const lowStockCount = useMemo(() => products.filter(p => p.availableQty > 0 && p.availableQty / (p.totalQty || 1) < 0.2).length, [products]);
   const fmtValue = (n: number) => n >= 1_000_000 ? `₹${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `₹${(n / 1_000).toFixed(1)}k` : `₹${n.toFixed(2)}`;
 
+  // Expiry helpers
+  const now30 = useMemo(() => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), []);
+  const todayStart = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
+  const expiringSoonCount = useMemo(() => products.filter(p => { if (!p.expiryDate) return false; const d = new Date(p.expiryDate); return d >= todayStart && d <= now30; }).length, [products, now30, todayStart]);
+
+  const getExpiryBadge = (expiryDate?: string | null) => {
+    if (!expiryDate) return null;
+    const d = new Date(expiryDate);
+    if (d < todayStart) return { label: 'Expired', cls: 'bg-red-50 text-red-600 border-red-200' };
+    if (d <= now30)     return { label: `${Math.ceil((d.getTime() - todayStart.getTime()) / 86400000)}d`, cls: 'bg-amber-50 text-amber-600 border-amber-200' };
+    return { label: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }), cls: 'bg-emerald-50 text-emerald-600 border-emerald-200' };
+  };
+
   return (
     <ShopAdminLayout activeRoute="/shop-admin/products">
       <div className="space-y-6 animate-fade-in">
@@ -312,12 +337,13 @@ export default function ShopAdminProductsPage() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           {[
-            { label: 'My Products',  value: stats.totalProducts,                 icon: 'CubeIcon',                  color: 'emerald', cls: 'text-slate-800',  sub: 'In this shop'        },
-            { label: 'Low Stock',    value: lowStockCount,                        icon: 'ExclamationTriangleIcon',   color: 'amber',   cls: 'text-amber-600', sub: 'Below threshold'     },
-            { label: 'Out of Stock', value: outOfStock,                           icon: 'XCircleIcon',               color: 'red',     cls: 'text-red-600',   sub: 'Needs restocking'    },
-            { label: 'Stock Value',  value: fmtValue(stats.catalogValue),         icon: 'CurrencyRupeeIcon',         color: 'emerald', cls: 'text-slate-800',  sub: 'Current stock value' },
+            { label: 'My Products',    value: stats.totalProducts,           icon: 'CubeIcon',                color: 'emerald', cls: 'text-slate-800',  sub: 'In this shop'        },
+            { label: 'Low Stock',      value: lowStockCount,                 icon: 'ExclamationTriangleIcon', color: 'amber',   cls: 'text-amber-600', sub: 'Below threshold'     },
+            { label: 'Out of Stock',   value: outOfStock,                    icon: 'XCircleIcon',             color: 'red',     cls: 'text-red-600',   sub: 'Needs restocking'    },
+            { label: 'Expiring Soon',  value: expiringSoonCount,             icon: 'ClockIcon',               color: 'orange',  cls: 'text-orange-600',sub: 'Within 30 days'      },
+            { label: 'Stock Value',    value: fmtValue(stats.catalogValue),  icon: 'CurrencyRupeeIcon',       color: 'emerald', cls: 'text-slate-800',  sub: 'Current stock value' },
           ].map(card => (
             <div key={card.label} className="bg-white rounded-2xl border border-slate-100 shadow-card p-5">
               <div className="flex items-center justify-between mb-3">
@@ -443,6 +469,29 @@ export default function ShopAdminProductsPage() {
               </div>
             </div>
 
+            {/* Row 3: MFG Date, Expiry Date */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  MFG Date
+                  <span className="ml-1.5 text-[10px] font-normal text-slate-400">(optional)</span>
+                </label>
+                <input type="date" value={form.mfgDate} onChange={e => setField('mfgDate', e.target.value)}
+                  className={inputBase} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Expiry Date
+                  <span className="ml-1.5 text-[10px] font-normal text-slate-400">(optional — skip for electronics, etc.)</span>
+                </label>
+                <input type="date" value={form.expiryDate} onChange={e => setField('expiryDate', e.target.value)}
+                  className={`${inputBase} ${form.expiryDate && new Date(form.expiryDate) < new Date() ? 'border-red-300 focus:border-red-400' : ''}`} />
+                {form.expiryDate && new Date(form.expiryDate) < new Date() && (
+                  <p className="mt-1 text-[11px] text-red-500">Date is in the past — product may already be expired.</p>
+                )}
+              </div>
+            </div>
+
             {/* Submit row */}
             <div className="flex items-center gap-3">
               <button onClick={handleAddProduct} disabled={isSubmitting}
@@ -465,6 +514,15 @@ export default function ShopAdminProductsPage() {
             <div className="flex-1 min-w-0">
               <h3 className="text-base font-semibold text-slate-800">Product List</h3>
               <p className="text-xs text-slate-400 mt-0.5">{isLoading ? 'Loading…' : `${totalCount} product${totalCount !== 1 ? 's' : ''} found`}</p>
+            </div>
+            {/* Expiry filter pills */}
+            <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+              {([['all', 'All'], ['expiring-soon', '⏳ Expiring Soon'], ['expired', '🔴 Expired']] as [ExpiryFilter, string][]).map(([val, lbl]) => (
+                <button key={val} onClick={() => { setExpiryFilter(val); setPage(1); }}
+                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
+                    expiryFilter === val ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                  }`}>{lbl}</button>
+              ))}
             </div>
             <div className="relative w-60">
               <Icon name="MagnifyingGlassIcon" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -499,6 +557,7 @@ export default function ShopAdminProductsPage() {
                     { key: 'price',        label: 'Price',        sortable: true  },
                     { key: 'totalQty',     label: 'Total Qty',    sortable: true  },
                     { key: 'availableQty', label: 'Available Qty',sortable: true  },
+                    { key: 'expiryDate',   label: 'Expiry',       sortable: true  },
                     { key: 'createdAt',    label: 'Added',        sortable: true  },
                     { key: 'actions',      label: '',             sortable: false },
                   ] as { key: string; label: string; sortable: boolean }[]).map(col => (
@@ -517,13 +576,13 @@ export default function ShopAdminProductsPage() {
                 {isLoading ? (
                   Array.from({ length: 6 }).map((_, i) => (
                     <tr key={`sk-${i}`} className="animate-pulse">
-                      {Array.from({ length: 7 }).map((__, j) => (
+                      {Array.from({ length: 8 }).map((__, j) => (
                         <td key={j} className="px-4 py-3"><div className="h-3 bg-slate-100 rounded w-full max-w-[120px]" /></td>
                       ))}
                     </tr>
                   ))
                 ) : products.length === 0 ? (
-                  <tr><td colSpan={7} className="py-16 text-center">
+                  <tr><td colSpan={8} className="py-16 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center">
                         <Icon name="CubeIcon" size={22} className="text-slate-400" />
@@ -560,6 +619,13 @@ export default function ShopAdminProductsPage() {
                             {product.availableQty === 0 && <span className="text-[10px] font-semibold bg-red-50 text-red-600 border border-red-200 px-1.5 py-0.5 rounded-full">Out</span>}
                             {product.availableQty > 0 && stockPct < 0.2 && <span className="text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-1.5 py-0.5 rounded-full">Low</span>}
                           </div>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {(() => {
+                            const badge = getExpiryBadge(product.expiryDate);
+                            if (!badge) return <span className="text-xs text-slate-300">—</span>;
+                            return <span className={`text-[10px] font-semibold border px-1.5 py-0.5 rounded-full ${badge.cls}`}>{badge.label}</span>;
+                          })()}
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
                           {new Date(product.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -718,6 +784,27 @@ export default function ShopAdminProductsPage() {
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Description</label>
                 <textarea rows={2} value={editState.description} onChange={e => setEditState(s => ({ ...s, description: e.target.value }))}
                   className={`${inputBase} resize-none`} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    MFG Date
+                    <span className="ml-1.5 text-[10px] font-normal text-slate-400">(optional)</span>
+                  </label>
+                  <input type="date" value={editState.mfgDate} onChange={e => setEditState(s => ({ ...s, mfgDate: e.target.value }))}
+                    className={inputBase} />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    Expiry Date
+                    <span className="ml-1.5 text-[10px] font-normal text-slate-400">(optional)</span>
+                  </label>
+                  <input type="date" value={editState.expiryDate} onChange={e => setEditState(s => ({ ...s, expiryDate: e.target.value }))}
+                    className={`${inputBase} ${editState.expiryDate && new Date(editState.expiryDate) < new Date() ? 'border-red-300' : ''}`} />
+                  {editState.expiryDate && new Date(editState.expiryDate) < new Date() && (
+                    <p className="mt-1 text-[11px] text-amber-500">This product is already expired.</p>
+                  )}
+                </div>
               </div>
             </div>
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
