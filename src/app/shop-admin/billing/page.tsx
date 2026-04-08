@@ -88,6 +88,8 @@ export default function BillingPage() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [phoneError, setPhoneError]       = useState('');
 
+  const [scanGunActive, setScanGunActive] = useState(false);
+
   const barcodeRef  = useRef<HTMLInputElement>(null);
   const searchRef   = useRef<HTMLInputElement>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -96,6 +98,28 @@ export default function BillingPage() {
   // Auto-focus barcode input on mount
   useEffect(() => {
     barcodeRef.current?.focus();
+  }, []);
+
+  // Global keydown: route any printable character to barcode input
+  // so the scan gun works even if the user accidentally clicks elsewhere
+  useEffect(() => {
+    function handleGlobalKey(e: KeyboardEvent) {
+      // Ignore if a modal / overlay / input is already focused (except barcode input itself)
+      const active = document.activeElement as HTMLElement | null;
+      const tag = active?.tagName ?? '';
+      const isTypingField =
+        (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') &&
+        active !== barcodeRef.current;
+      if (isTypingField) return;
+      // Ignore modifier-only combos (Ctrl+C, Alt+F4, etc.)
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      // Only handle printable characters or Enter
+      if (e.key.length === 1 || e.key === 'Enter') {
+        barcodeRef.current?.focus();
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKey);
+    return () => window.removeEventListener('keydown', handleGlobalKey);
   }, []);
 
   // Close search dropdown on outside click
@@ -678,7 +702,7 @@ export default function BillingPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Billing</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Scan barcodes or search products to add to cart
+            Use your scan gun or search products to add to cart
           </p>
         </div>
         {cart.length > 0 && (
@@ -697,26 +721,48 @@ export default function BillingPage() {
         <div className="lg:col-span-3 space-y-4">
 
           {/* Barcode scanner input */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+          <div className={`bg-white border rounded-2xl p-5 shadow-sm transition-all ${
+            scanGunActive ? 'border-emerald-400 ring-2 ring-emerald-500/20' : 'border-slate-200'
+          }`}>
+            {/* Header row */}
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
-                  <Icon name="QrCodeIcon" className="w-4 h-4 text-emerald-700" />
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                  scanGunActive ? 'bg-emerald-500' : 'bg-emerald-100'
+                }`}>
+                  <Icon name="QrCodeIcon" className={`w-4 h-4 ${
+                    scanGunActive ? 'text-white' : 'text-emerald-700'
+                  }`} />
                 </div>
                 <div>
-                  <div className="text-sm font-semibold text-slate-800">Barcode Scanner</div>
-                  <div className="text-xs text-slate-400">USB/Bluetooth scanner or type SKU — or use your phone camera</div>
+                  <div className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                    Scan Gun
+                    {scanGunActive ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-semibold rounded-full">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Ready
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-500 text-xs font-medium rounded-full">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                        Click field or start scanning
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-slate-400">Point your scan gun at any barcode — it will auto-submit</div>
                 </div>
               </div>
               <button
                 onClick={() => { setScanError(''); setShowCameraScanner(true); }}
-                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold rounded-xl border border-emerald-200 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-500 text-xs font-medium rounded-xl border border-slate-200 transition-colors"
+                title="Use phone/laptop camera instead"
               >
                 <Icon name="CameraIcon" className="w-3.5 h-3.5" />
-                Scan with Camera
+                Camera
               </button>
             </div>
 
+            {/* Input row */}
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <input
@@ -724,14 +770,25 @@ export default function BillingPage() {
                   type="text"
                   value={barcodeInput}
                   onChange={e => setBarcodeInput(e.target.value)}
+                  onFocus={() => setScanGunActive(true)}
+                  onBlur={() => setScanGunActive(false)}
                   onKeyDown={e => {
                     if (e.key === 'Enter') handleBarcodeScan(barcodeInput);
                   }}
-                  placeholder="Scan barcode or type SKU and press Enter…"
-                  className="w-full pl-10 pr-4 py-3 text-sm bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 font-mono transition-all"
+                  placeholder="Point scan gun here and pull trigger…"
+                  className={`w-full pl-10 pr-4 py-3 text-sm bg-slate-50 border rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 font-mono transition-all ${
+                    scanGunActive
+                      ? 'border-emerald-400 focus:ring-emerald-500/20 bg-emerald-50/30'
+                      : 'border-slate-200 focus:ring-emerald-500/20 focus:border-emerald-400'
+                  }`}
                   autoComplete="off"
                 />
-                <Icon name="QrCodeIcon" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Icon
+                  name="QrCodeIcon"
+                  className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${
+                    scanGunActive ? 'text-emerald-500' : 'text-slate-400'
+                  }`}
+                />
               </div>
               <button
                 onClick={() => handleBarcodeScan(barcodeInput)}
@@ -746,6 +803,14 @@ export default function BillingPage() {
                 {scanning ? 'Looking up…' : 'Scan'}
               </button>
             </div>
+
+            {/* Re-focus hint when not active */}
+            {!scanGunActive && !scanError && (
+              <p className="mt-2 text-xs text-slate-400 flex items-center gap-1.5">
+                <Icon name="InformationCircleIcon" className="w-3.5 h-3.5 flex-shrink-0" />
+                Press any key or click the field above — then pull the scan gun trigger
+              </p>
+            )}
 
             {scanError && (
               <div className="mt-3 flex items-center gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
@@ -1023,10 +1088,10 @@ export default function BillingPage() {
             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Quick Tips</div>
             <div className="space-y-2">
               {[
-                { icon: 'QrCodeIcon', tip: 'Click the barcode field and scan — it auto-submits on Enter' },
-                { icon: 'MagnifyingGlassIcon', tip: 'Type in the search box to find products by name or SKU' },
-                { icon: 'ArrowPathIcon', tip: 'Adjust quantities using the +/− buttons in the cart' },
-                { icon: 'PrinterIcon', tip: 'After checkout, use Print to get a paper receipt' },
+                { icon: 'QrCodeIcon', tip: 'The scan field is always ready — just pull the trigger on your scan gun' },
+                { icon: 'ArrowPathIcon', tip: 'Scanning the same barcode again adds +1 to that item in the cart' },
+                { icon: 'MagnifyingGlassIcon', tip: 'Use Search Products below to add items manually by name or SKU' },
+                { icon: 'PrinterIcon', tip: 'After checkout, download the PDF receipt or print it' },
               ].map(({ icon, tip }) => (
                 <div key={tip} className="flex items-start gap-2">
                   <Icon name={icon} className="w-3.5 h-3.5 text-slate-400 mt-0.5 flex-shrink-0" />
