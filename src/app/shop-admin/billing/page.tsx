@@ -92,6 +92,8 @@ export default function BillingPage() {
 
   const barcodeRef       = useRef<HTMLInputElement>(null);
   const barcodeValueRef  = useRef('');          // mirrors barcodeInput for use in event handlers
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleBarcodeScanRef = useRef<(code: string) => void>(() => {});
   const searchRef        = useRef<HTMLInputElement>(null);
   const searchTimer      = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dropRef          = useRef<HTMLDivElement>(null);
@@ -129,7 +131,7 @@ export default function BillingPage() {
         barcodeRef.current?.focus();
         const val = barcodeValueRef.current;
         if (val.trim()) {
-          handleBarcodeScan(val);
+          handleBarcodeScanRef.current(val);
         }
       } else if (e.key === 'Backspace') {
         e.preventDefault();
@@ -148,7 +150,7 @@ export default function BillingPage() {
     }
     window.addEventListener('keydown', handleGlobalKey);
     return () => window.removeEventListener('keydown', handleGlobalKey);
-  }, [handleBarcodeScan]);
+  }, []);
 
   // Close search dropdown on outside click
   useEffect(() => {
@@ -188,9 +190,13 @@ export default function BillingPage() {
     } finally {
       setScanning(false);
       setBarcodeInput('');
+      barcodeValueRef.current = '';
       barcodeRef.current?.focus();
     }
   }, [shopId]);
+
+  // Keep the ref always pointing to the latest version
+  handleBarcodeScanRef.current = handleBarcodeScan;
 
   // ── Cart helpers ────────────────────────────────────────────────────────────
 
