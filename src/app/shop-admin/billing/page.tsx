@@ -90,37 +90,65 @@ export default function BillingPage() {
 
   const [scanGunActive, setScanGunActive] = useState(false);
 
-  const barcodeRef  = useRef<HTMLInputElement>(null);
-  const searchRef   = useRef<HTMLInputElement>(null);
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const dropRef     = useRef<HTMLDivElement>(null);
+  const barcodeRef       = useRef<HTMLInputElement>(null);
+  const barcodeValueRef  = useRef('');          // mirrors barcodeInput for use in event handlers
+  const searchRef        = useRef<HTMLInputElement>(null);
+  const searchTimer      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dropRef          = useRef<HTMLDivElement>(null);
+
+  // Keep the ref in sync with state
+  useEffect(() => { barcodeValueRef.current = barcodeInput; }, [barcodeInput]);
 
   // Auto-focus barcode input on mount
   useEffect(() => {
     barcodeRef.current?.focus();
   }, []);
 
-  // Global keydown: route any printable character to barcode input
-  // so the scan gun works even if the user accidentally clicks elsewhere
+  // Global keydown: intercept characters from the scan gun even when another
+  // element has focus, so no keystroke is ever lost.
   useEffect(() => {
     function handleGlobalKey(e: KeyboardEvent) {
-      // Ignore if a modal / overlay / input is already focused (except barcode input itself)
       const active = document.activeElement as HTMLElement | null;
       const tag = active?.tagName ?? '';
-      const isTypingField =
+      const isOtherTypingField =
         (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') &&
         active !== barcodeRef.current;
-      if (isTypingField) return;
-      // Ignore modifier-only combos (Ctrl+C, Alt+F4, etc.)
+
+      // If focus is already on the barcode input, let the native input handle it
+      if (active === barcodeRef.current) return;
+
+      // If focus is on another form field, don't steal keystrokes
+      if (isOtherTypingField) return;
+
+      // Ignore modifier combos
       if (e.ctrlKey || e.altKey || e.metaKey) return;
-      // Only handle printable characters or Enter
-      if (e.key.length === 1 || e.key === 'Enter') {
+
+      if (e.key === 'Enter') {
+        // Trigger scan with whatever has been accumulated
+        e.preventDefault();
+        barcodeRef.current?.focus();
+        const val = barcodeValueRef.current;
+        if (val.trim()) {
+          handleBarcodeScan(val);
+        }
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        const next = barcodeValueRef.current.slice(0, -1);
+        barcodeValueRef.current = next;
+        setBarcodeInput(next);
+        barcodeRef.current?.focus();
+      } else if (e.key.length === 1) {
+        // Printable character — append to barcode value and focus the input
+        e.preventDefault();
+        const next = barcodeValueRef.current + e.key;
+        barcodeValueRef.current = next;
+        setBarcodeInput(next);
         barcodeRef.current?.focus();
       }
     }
     window.addEventListener('keydown', handleGlobalKey);
     return () => window.removeEventListener('keydown', handleGlobalKey);
-  }, []);
+  }, [handleBarcodeScan]);
 
   // Close search dropdown on outside click
   useEffect(() => {
