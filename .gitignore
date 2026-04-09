@@ -12,6 +12,10 @@ build/
 # HTTPS dev certificates (contains private key)
 certificates/
 
+# QZ Tray signing — never commit the private key
+# The public certificate (public/certificate.pem) is safe to commit.
+certificates/private-key.pem
+
 # Logs
 npm-debug.log*
 yarn-debug.log*

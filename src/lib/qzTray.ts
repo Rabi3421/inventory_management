@@ -8,9 +8,18 @@
  * Prerequisites (one-time setup on the machine running the browser):
  *  1. Download & install QZ Tray:  https://qz.io/download/
  *  2. Launch QZ Tray — it sits silently in the system tray / menu bar.
- *  3. When prompted by QZ Tray, click "Allow" for this site.
+ *  3. When first prompted, click "Allow" AND check "Remember this decision".
+ *     Subsequent connections will be silent (no popup).
  *
- * This module is browser-only. All functions are no-ops / throw on the server.
+ * Signing flow:
+ *  - The server (Next.js API route /api/sign) signs each request with RSA-SHA512
+ *    using the private key stored in certificates/private-key.pem.
+ *  - The matching public certificate (/public/certificate.pem) is sent to QZ Tray
+ *    so it can verify the signature.
+ *  - A valid signature enables the "Remember this decision" checkbox in QZ Tray,
+ *    which is disabled for unsigned (or tampered) requests.
+ *
+ * This module is browser-only — all functions throw in a server-side context.
  */
 
 /* ── Global qz type (the library uses a window.qz global) ─────────────────── */
@@ -21,15 +30,22 @@ declare global {
     }
 }
 
-// QZ Tray 2.2.x CDN bundle — no npm package needed
-const QZ_CDN_URL = '/qz-tray.js';
+/** Local path — served by Next.js from the /public folder */
+const QZ_SCRIPT_URL = '/qz-tray.js';
+
+/** Public certificate fetched from /public/certificate.pem */
+const QZ_CERT_URL = '/certificate.pem';
+
+/** Next.js API route that signs data server-side with RSA-SHA512 */
+const QZ_SIGN_URL = '/api/sign';
+
 let _scriptLoadPromise: Promise<void> | null = null;
 
 // ── Script loading ────────────────────────────────────────────────────────────
 
 /**
- * Dynamically inserts the QZ Tray <script> tag once and returns a promise that
- * resolves when the global `window.qz` is available.
+ * Dynamically inserts the QZ Tray <script> tag exactly once and resolves when
+ * `window.qz` is available.
  */
 function loadQzScript(): Promise<void> {
     if (typeof window === 'undefined') {
@@ -39,18 +55,22 @@ function loadQzScript(): Promise<void> {
     if (_scriptLoadPromise) return _scriptLoadPromise;
 
     _scriptLoadPromise = new Promise<void>((resolve, reject) => {
-        // Avoid adding the tag twice if somehow called in parallel
-        if (document.querySelector(`script[src="${QZ_CDN_URL}"]`)) {
-            resolve();
+        // Guard against duplicate script tags (e.g. React StrictMode double-invoke)
+        if (document.querySelector(`script[src="${QZ_SCRIPT_URL}"]`)) {
+            // Script tag exists — wait for window.qz to appear
+            const check = setInterval(() => {
+                if (window.qz) { clearInterval(check); resolve(); }
+            }, 50);
             return;
         }
+
         const script = document.createElement('script');
-        script.src = QZ_CDN_URL;
+        script.src = QZ_SCRIPT_URL;
         script.async = true;
         script.onload = () => resolve();
         script.onerror = () => {
-            _scriptLoadPromise = null; // allow retrying
-            reject(new Error('[QZ] Failed to load qz-tray script from CDN. Check your internet connection.'));
+            _scriptLoadPromise = null; // allow retry
+            reject(new Error('[QZ] Failed to load qz-tray.js from /public. Ensure the file exists.'));
         };
         document.head.appendChild(script);
     });
@@ -58,44 +78,83 @@ function loadQzScript(): Promise<void> {
     return _scriptLoadPromise;
 }
 
-// ── Security setup ────────────────────────────────────────────────────────────
+// ── Security setup (signed) ───────────────────────────────────────────────────
 
 /**
- * Applies an *unsigned* security configuration — suitable for localhost /
- * private-network deployments where the site is trusted.
+ * Configures QZ Tray to use RSA-SHA512 signed requests.
  *
- * For a public-facing site you should supply a signed certificate instead.
- * See: https://qz.io/wiki/2.0-signing-messages
+ * - Certificate is fetched once from /certificate.pem (public directory).
+ * - Each message is signed by POSTing to /api/sign (server-side, never exposes
+ *   the private key to the browser).
+ *
+ * With a valid signed certificate, QZ Tray enables "Remember this decision",
+ * so the user only needs to approve the connection once.
  */
-function applyUnsignedSecurity(): void {
+async function applySignedSecurity(): Promise<void> {
     const qz = window.qz!;
-    // Empty certificate = QZ Tray will prompt the user to allow the connection
+
+    // Fetch the certificate (public key / cert presented to QZ Tray for verification)
+    const certResponse = await fetch(QZ_CERT_URL);
+    if (!certResponse.ok) {
+        throw new Error(`[QZ] Failed to fetch certificate from ${QZ_CERT_URL} (${certResponse.status})`);
+    }
+    const certificate = await certResponse.text();
+
+    // Tell QZ Tray which certificate to use for verifying signatures
     qz.security.setCertificatePromise(
-        (resolve: (cert: string) => void) => resolve(''),
+        (resolve: (cert: string) => void, _reject: (err: Error) => void) => {
+            resolve(certificate);
+        },
     );
+
+    // Algorithm must be declared before setSignaturePromise
     qz.security.setSignatureAlgorithm('SHA512');
-    // Return the string to-sign unchanged — no actual signing
-    qz.security.setSignaturePromise(
-        (toSign: string) => ({
-            toPromise: (): Promise<string> => Promise.resolve(toSign),
-        }),
-    );
+
+    // Each outgoing QZ Tray message is signed via the backend API
+    qz.security.setSignaturePromise((toSign: string) => ({
+        toPromise: async (): Promise<string> => {
+            const res = await fetch(QZ_SIGN_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                // `toSign` is the plaintext string QZ Tray wants signed
+                body: JSON.stringify({ data: toSign }),
+            });
+
+            if (!res.ok) {
+                const text = await res.text().catch(() => res.statusText);
+                throw new Error(`[QZ] Signing request failed (${res.status}): ${text}`);
+            }
+
+            const json = await res.json() as { signature?: string; error?: string };
+            if (!json.signature) {
+                throw new Error(`[QZ] Signing API did not return a signature: ${json.error ?? 'unknown error'}`);
+            }
+            return json.signature;
+        },
+    }));
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
- * Load the QZ Tray script and open a WebSocket connection to the local daemon.
- * Safe to call multiple times — reconnects only when not already active.
+ * Load the QZ Tray script, configure RSA-SHA512 signing, and open a WebSocket
+ * connection to the local QZ Tray daemon.
  *
- * @throws if QZ Tray is not running on this machine.
+ * Safe to call multiple times — reconnects only when the socket is not active.
+ *
+ * @throws if QZ Tray is not running on this machine or signing fails.
  */
 export async function qzConnect(): Promise<void> {
     await loadQzScript();
     const qz = window.qz!;
+
+    // Re-apply security on every call so that a fresh certificate/signature
+    // handler is always registered (important after page navigations).
+    await applySignedSecurity();
+
     if (qz.websocket.isActive()) return;
-    applyUnsignedSecurity();
-    await qz.websocket.connect({ retries: 2, delay: 1 });
+
+    await qz.websocket.connect({ retries: 3, delay: 1 });
 }
 
 /**
