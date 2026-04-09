@@ -3,6 +3,13 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import ShopAdminLayout from '@/components/ShopAdminLayout';
 import Icon from '@/components/ui/AppIcon';
 import { useAuth } from '@/contexts/AuthContext';
+import {
+  qzConnect,
+  qzDisconnect,
+  qzIsConnected,
+  qzGetPrinters,
+  qzPrintLabels,
+} from '@/lib/qzTray';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -76,52 +83,174 @@ const inputBase =
 
 export default function ShopAdminProductsPage() {
   const { user } = useAuth();
-  const shopId   = user?.shopId   ?? '';
+  const shopId = user?.shopId ?? '';
   const shopName = user?.shopName ?? 'My Shop';
 
   // Data
-  const [products, setProducts]       = useState<Product[]>([]);
-  const [stats, setStats]             = useState<ProductStats>({ totalProducts: 0, totalUnits: 0, availableUnits: 0, catalogValue: 0 });
-  const [totalPages, setTotalPages]   = useState(1);
-  const [totalCount, setTotalCount]   = useState(0);
-  const [isLoading, setIsLoading]     = useState(true);
-  const [loadError, setLoadError]     = useState('');
+  const [products, setProducts] = useState<Product[]>([]);
+  const [stats, setStats] = useState<ProductStats>({ totalProducts: 0, totalUnits: 0, availableUnits: 0, catalogValue: 0 });
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   // Table
-  const [search, setSearch]               = useState('');
+  const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [sortKey, setSortKey]             = useState<SortKey>('createdAt');
-  const [sortDir, setSortDir]             = useState<SortDir>('desc');
-  const [page, setPage]                   = useState(1);
-  const [expiryFilter, setExpiryFilter]   = useState<ExpiryFilter>('all');
+  const [sortKey, setSortKey] = useState<SortKey>('createdAt');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [page, setPage] = useState(1);
+  const [expiryFilter, setExpiryFilter] = useState<ExpiryFilter>('all');
 
   // Add form
-  const [form, setForm]               = useState<FormState>(EMPTY_FORM);
-  const [formErrors, setFormErrors]   = useState<Partial<Record<keyof FormState, string>>>({});
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [formErrors, setFormErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [apiError, setApiError]       = useState('');
+  const [apiError, setApiError] = useState('');
 
   // Name autocomplete
   const [nameSuggestions, setNameSuggestions] = useState<Product[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const nameInputRef      = useRef<HTMLInputElement>(null);
-  const quantityInputRef  = useRef<HTMLInputElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const quantityInputRef = useRef<HTMLInputElement>(null);
   const suggestTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchTimeoutRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Edit modal
-  const [editTarget, setEditTarget]     = useState<Product | null>(null);
-  const [editState, setEditState]       = useState<EditState>({ name: '', price: '', totalQty: '', availableQty: '', description: '', sku: '' });
-  const [editErrors, setEditErrors]     = useState<Partial<Record<keyof EditState, string>>>({});
+  const [editTarget, setEditTarget] = useState<Product | null>(null);
+  const [editState, setEditState] = useState<EditState>({ name: '', price: '', totalQty: '', availableQty: '', description: '', sku: '' });
+  const [editErrors, setEditErrors] = useState<Partial<Record<keyof EditState, string>>>({});
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editApiError, setEditApiError] = useState('');
 
   // Delete modal
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
-  const [isDeleting, setIsDeleting]     = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Print barcodes modal
-  const [printTarget, setPrintTarget]   = useState<PrintTarget | null>(null);
+  const [printTarget, setPrintTarget] = useState<PrintTarget | null>(null);
+  const [isPrinting, setIsPrinting] = useState(false);
+
+  // ── QZ Tray state ─────────────────────────────────────────────────────────
+  type QzStatus = 'idle' | 'connecting' | 'connected' | 'error';
+  const [qzStatus, setQzStatus] = useState<QzStatus>('idle');
+  const [qzError, setQzError] = useState('');
+  const [qzPrinters, setQzPrinters] = useState<string[]>([]);
+  const [qzPrinter, setQzPrinter] = useState<string>(() => {
+    // Restore last-used printer from localStorage
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('qz_printer') ?? '';
+    }
+    return '';
+  });
+
+  // Persist selected printer
+  useEffect(() => {
+    if (qzPrinter) localStorage.setItem('qz_printer', qzPrinter);
+  }, [qzPrinter]);
+
+  // Auto-connect to QZ Tray when the print modal opens
+  useEffect(() => {
+    if (!printTarget) return;
+    if (qzIsConnected()) {
+      setQzStatus('connected');
+      qzGetPrinters().then(list => {
+        setQzPrinters(list);
+        // Pre-select saved printer or auto-detect Shreyans Barcode Printer
+        setQzPrinter(prev => {
+          if (prev && list.includes(prev)) return prev;
+          const thermal = list.find(p =>
+            /shreyans|barcode|thermal|zebra|brother.*ql|tsc|bixolon|xprinter/i.test(p)
+          );
+          return thermal ?? list[0] ?? prev;
+        });
+      }).catch(() => { });
+      return;
+    }
+    setQzStatus('connecting');
+    setQzError('');
+    qzConnect()
+      .then(() => {
+        setQzStatus('connected');
+        return qzGetPrinters();
+      })
+      .then(list => {
+        setQzPrinters(list);
+        setQzPrinter(prev => {
+          if (prev && list.includes(prev)) return prev;
+          const thermal = list.find(p =>
+            /shreyans|barcode|thermal|zebra|brother.*ql|tsc|bixolon|xprinter/i.test(p)
+          );
+          return thermal ?? list[0] ?? prev;
+        });
+      })
+      .catch((err: unknown) => {
+        setQzStatus('error');
+        setQzError(
+          (err instanceof Error ? err.message : String(err)) ||
+          'QZ Tray not running. Please install and start QZ Tray.',
+        );
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printTarget]);
+
+  // ── QZ direct print ───────────────────────────────────────────────────────
+  async function handlePrintLabels(baseUrl: string) {
+    setIsPrinting(true);
+    try {
+      if (qzStatus === 'connected' && qzPrinter) {
+        // ── Path A: QZ Tray direct print (no dialog) ──────────────────────
+        const jsonUrl = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}format=json`;
+        const res = await fetch(jsonUrl, { credentials: 'include' });
+        if (!res.ok) throw new Error('Failed to fetch barcode data.');
+        const data: { labels: { pngBase64: string }[] } = await res.json();
+        await qzPrintLabels(qzPrinter, data.labels.map(l => l.pngBase64));
+        setPrintTarget(null);
+      } else {
+        // ── Path B: iframe + OS print dialog (fallback) ───────────────────
+        const res = await fetch(baseUrl, { credentials: 'include' });
+        const html = await res.text();
+        const iframe = document.createElement('iframe');
+        iframe.style.cssText =
+          'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:0;opacity:0;pointer-events:none;';
+        document.body.appendChild(iframe);
+        const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
+        if (!doc) throw new Error('Cannot access iframe document');
+        doc.open(); doc.write(html); doc.close();
+        const imgs = Array.from(doc.querySelectorAll<HTMLImageElement>('img'));
+        await Promise.all(imgs.map(img => new Promise<void>(resolve => {
+          if (img.complete) { resolve(); return; }
+          img.onload = img.onerror = () => resolve();
+        })));
+        setTimeout(() => {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+          setTimeout(() => { try { document.body.removeChild(iframe); } catch { /**/ } }, 5000);
+        }, 300);
+        setPrintTarget(null);
+      }
+    } catch (err) {
+      console.error('[handlePrintLabels]', err);
+      window.open(baseUrl, '_blank');
+    } finally {
+      setIsPrinting(false);
+    }
+  }
+
+  async function handleQzReconnect() {
+    setQzStatus('connecting');
+    setQzError('');
+    try {
+      await qzDisconnect();
+      await qzConnect();
+      setQzStatus('connected');
+      const list = await qzGetPrinters();
+      setQzPrinters(list);
+    } catch (err: unknown) {
+      setQzStatus('error');
+      setQzError(err instanceof Error ? err.message : 'Connection failed.');
+    }
+  }
 
   // ── Search debounce ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -206,13 +335,13 @@ export default function ShopAdminProductsPage() {
         credentials: 'include',
         body: JSON.stringify({
           shopId,
-          name:        form.name.trim(),
+          name: form.name.trim(),
           description: form.description.trim(),
-          price:       Number(form.price),
-          quantity:    Number(form.quantity),
-          sku:         form.skuMode === 'manual' ? form.sku.trim() : '',
-          mfgDate:     form.mfgDate    || null,
-          expiryDate:  form.expiryDate || null,
+          price: Number(form.price),
+          quantity: Number(form.quantity),
+          sku: form.skuMode === 'manual' ? form.sku.trim() : '',
+          mfgDate: form.mfgDate || null,
+          expiryDate: form.expiryDate || null,
         }),
       });
       const body = await res.json();
@@ -222,20 +351,20 @@ export default function ShopAdminProductsPage() {
       setNameSuggestions([]);
       setShowSuggestions(false);
       setPrintTarget({
-        productId:       body.product._id,
-        productName:     body.product.name,
-        sku:             body.product.sku,
-        qty:             Number(form.quantity),
-        totalQty:        body.product.totalQty,
-        price:           body.product.price,
+        productId: body.product._id,
+        productName: body.product.name,
+        sku: body.product.sku,
+        qty: Number(form.quantity),
+        totalQty: body.product.totalQty,
+        price: body.product.price,
         barcodePrintUrl: body.barcodePrintUrl ?? `/api/products/${body.product._id}/barcodes`,
-        restocked:       body.restocked ?? false,
+        restocked: body.restocked ?? false,
       });
       setPage(1); setSortKey('createdAt'); setSortDir('desc');
       fetchProducts();
     } catch { setApiError('Network error. Please try again.'); }
     finally { setIsSubmitting(false); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form, fetchProducts, shopId]);
 
   // ── Edit ──────────────────────────────────────────────────────────────────
@@ -299,25 +428,25 @@ export default function ShopAdminProductsPage() {
 
   const SortIcon = ({ col }: { col: SortKey }) => (
     <span className="ml-1 inline-flex flex-col gap-0">
-      <Icon name="ChevronUpIcon"   size={10} className={sortKey === col && sortDir === 'asc'  ? 'text-emerald-600' : 'text-slate-300'} />
+      <Icon name="ChevronUpIcon" size={10} className={sortKey === col && sortDir === 'asc' ? 'text-emerald-600' : 'text-slate-300'} />
       <Icon name="ChevronDownIcon" size={10} className={sortKey === col && sortDir === 'desc' ? 'text-emerald-600' : 'text-slate-300'} />
     </span>
   );
 
-  const outOfStock    = useMemo(() => products.filter(p => p.availableQty === 0).length, [products]);
+  const outOfStock = useMemo(() => products.filter(p => p.availableQty === 0).length, [products]);
   const lowStockCount = useMemo(() => products.filter(p => p.availableQty > 0 && p.availableQty / (p.totalQty || 1) < 0.2).length, [products]);
   const fmtValue = (n: number) => n >= 1_000_000 ? `₹${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `₹${(n / 1_000).toFixed(1)}k` : `₹${n.toFixed(2)}`;
 
   // Expiry helpers
   const now30 = useMemo(() => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), []);
-  const todayStart = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
+  const todayStart = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
   const expiringSoonCount = useMemo(() => products.filter(p => { if (!p.expiryDate) return false; const d = new Date(p.expiryDate); return d >= todayStart && d <= now30; }).length, [products, now30, todayStart]);
 
   const getExpiryBadge = (expiryDate?: string | null) => {
     if (!expiryDate) return null;
     const d = new Date(expiryDate);
     if (d < todayStart) return { label: 'Expired', cls: 'bg-red-50 text-red-600 border-red-200' };
-    if (d <= now30)     return { label: `${Math.ceil((d.getTime() - todayStart.getTime()) / 86400000)}d`, cls: 'bg-amber-50 text-amber-600 border-amber-200' };
+    if (d <= now30) return { label: `${Math.ceil((d.getTime() - todayStart.getTime()) / 86400000)}d`, cls: 'bg-amber-50 text-amber-600 border-amber-200' };
     return { label: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }), cls: 'bg-emerald-50 text-emerald-600 border-emerald-200' };
   };
 
@@ -339,11 +468,11 @@ export default function ShopAdminProductsPage() {
         {/* Stats Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           {[
-            { label: 'My Products',    value: stats.totalProducts,           icon: 'CubeIcon',                color: 'emerald', cls: 'text-slate-800',  sub: 'In this shop'        },
-            { label: 'Low Stock',      value: lowStockCount,                 icon: 'ExclamationTriangleIcon', color: 'amber',   cls: 'text-amber-600', sub: 'Below threshold'     },
-            { label: 'Out of Stock',   value: outOfStock,                    icon: 'XCircleIcon',             color: 'red',     cls: 'text-red-600',   sub: 'Needs restocking'    },
-            { label: 'Expiring Soon',  value: expiringSoonCount,             icon: 'ClockIcon',               color: 'orange',  cls: 'text-orange-600',sub: 'Within 30 days'      },
-            { label: 'Stock Value',    value: fmtValue(stats.catalogValue),  icon: 'CurrencyRupeeIcon',       color: 'emerald', cls: 'text-slate-800',  sub: 'Current stock value' },
+            { label: 'My Products', value: stats.totalProducts, icon: 'CubeIcon', color: 'emerald', cls: 'text-slate-800', sub: 'In this shop' },
+            { label: 'Low Stock', value: lowStockCount, icon: 'ExclamationTriangleIcon', color: 'amber', cls: 'text-amber-600', sub: 'Below threshold' },
+            { label: 'Out of Stock', value: outOfStock, icon: 'XCircleIcon', color: 'red', cls: 'text-red-600', sub: 'Needs restocking' },
+            { label: 'Expiring Soon', value: expiringSoonCount, icon: 'ClockIcon', color: 'orange', cls: 'text-orange-600', sub: 'Within 30 days' },
+            { label: 'Stock Value', value: fmtValue(stats.catalogValue), icon: 'CurrencyRupeeIcon', color: 'emerald', cls: 'text-slate-800', sub: 'Current stock value' },
           ].map(card => (
             <div key={card.label} className="bg-white rounded-2xl border border-slate-100 shadow-card p-5">
               <div className="flex items-center justify-between mb-3">
@@ -519,9 +648,8 @@ export default function ShopAdminProductsPage() {
             <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
               {([['all', 'All'], ['expiring-soon', '⏳ Expiring Soon'], ['expired', '🔴 Expired']] as [ExpiryFilter, string][]).map(([val, lbl]) => (
                 <button key={val} onClick={() => { setExpiryFilter(val); setPage(1); }}
-                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
-                    expiryFilter === val ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'
-                  }`}>{lbl}</button>
+                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${expiryFilter === val ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                    }`}>{lbl}</button>
               ))}
             </div>
             <div className="relative w-60">
@@ -552,14 +680,14 @@ export default function ShopAdminProductsPage() {
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
                   {([
-                    { key: 'sku',          label: 'SKU',          sortable: false },
-                    { key: 'name',         label: 'Product Name', sortable: true  },
-                    { key: 'price',        label: 'Price',        sortable: true  },
-                    { key: 'totalQty',     label: 'Total Qty',    sortable: true  },
-                    { key: 'availableQty', label: 'Available Qty',sortable: true  },
-                    { key: 'expiryDate',   label: 'Expiry',       sortable: true  },
-                    { key: 'createdAt',    label: 'Added',        sortable: true  },
-                    { key: 'actions',      label: '',             sortable: false },
+                    { key: 'sku', label: 'SKU', sortable: false },
+                    { key: 'name', label: 'Product Name', sortable: true },
+                    { key: 'price', label: 'Price', sortable: true },
+                    { key: 'totalQty', label: 'Total Qty', sortable: true },
+                    { key: 'availableQty', label: 'Available Qty', sortable: true },
+                    { key: 'expiryDate', label: 'Expiry', sortable: true },
+                    { key: 'createdAt', label: 'Added', sortable: true },
+                    { key: 'actions', label: '', sortable: false },
                   ] as { key: string; label: string; sortable: boolean }[]).map(col => (
                     <th key={`th-${col.key}`}
                       onClick={col.sortable ? () => toggleSort(col.key as SortKey) : undefined}
@@ -593,7 +721,7 @@ export default function ShopAdminProductsPage() {
                   </td></tr>
                 ) : (
                   products.map(product => {
-                    const stockPct  = product.totalQty > 0 ? product.availableQty / product.totalQty : 0;
+                    const stockPct = product.totalQty > 0 ? product.availableQty / product.totalQty : 0;
                     const stockColor = product.availableQty === 0 ? 'text-red-600' : stockPct < 0.2 ? 'text-amber-600' : 'text-emerald-600';
                     return (
                       <tr key={product._id} className="hover:bg-slate-50/70 transition-colors">
@@ -684,21 +812,30 @@ export default function ShopAdminProductsPage() {
       {printTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+
+            {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center">
                   <Icon name="PrinterIcon" size={18} className="text-emerald-600" />
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-slate-800">{printTarget.restocked ? 'Stock Updated — Print New Barcodes' : 'Product Added — Print Barcodes'}</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">{printTarget.restocked ? `Total stock is now ${printTarget.totalQty} units` : 'Ready to print barcode labels'}</p>
+                  <h3 className="text-base font-semibold text-slate-800">
+                    {printTarget.restocked ? 'Stock Updated — Print New Barcodes' : 'Product Added — Print Barcodes'}
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {printTarget.restocked ? `Total stock is now ${printTarget.totalQty} units` : 'Ready to print barcode labels'}
+                  </p>
                 </div>
               </div>
               <button onClick={() => setPrintTarget(null)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600">
                 <Icon name="XMarkIcon" size={18} />
               </button>
             </div>
+
             <div className="px-6 py-5 space-y-4">
+
+              {/* Product info */}
               <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-1.5">
                 <p className="text-sm font-semibold text-slate-800">{printTarget.productName}</p>
                 <div className="flex items-center gap-4 text-xs text-slate-500">
@@ -706,6 +843,8 @@ export default function ShopAdminProductsPage() {
                   <span>₹{printTarget.price.toFixed(2)}</span>
                 </div>
               </div>
+
+              {/* Label count */}
               <div className="flex items-center gap-3 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl">
                 <Icon name="TagIcon" size={16} className="text-emerald-600 shrink-0" />
                 <p className="text-sm text-emerald-700">
@@ -714,14 +853,125 @@ export default function ShopAdminProductsPage() {
                     : <><span className="font-bold">{printTarget.qty}</span> barcode label{printTarget.qty !== 1 ? 's' : ''} will be generated — one per unit.</>}
                 </p>
               </div>
-              <p className="text-xs text-slate-400">Each label contains a unique Code 128 barcode. Stick one on each physical product unit. Sized for 2″×1″ thermal paper.</p>
+
+              {/* ── QZ Tray status block ─────────────────────────────────────── */}
+              <div className={`rounded-xl border p-4 space-y-3 ${qzStatus === 'connected' ? 'bg-emerald-50 border-emerald-200' :
+                  qzStatus === 'error' ? 'bg-red-50 border-red-200' :
+                    qzStatus === 'connecting' ? 'bg-blue-50 border-blue-200' :
+                      'bg-slate-50 border-slate-200'
+                }`}>
+
+                {/* Status row */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {qzStatus === 'connecting' && (
+                      <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-blue-600 rounded-full animate-spin" />
+                    )}
+                    {qzStatus === 'connected' && (
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block" />
+                    )}
+                    {qzStatus === 'error' && (
+                      <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
+                    )}
+                    {qzStatus === 'idle' && (
+                      <span className="w-2 h-2 rounded-full bg-slate-400 inline-block" />
+                    )}
+                    <span className={`text-xs font-semibold ${qzStatus === 'connected' ? 'text-emerald-700' :
+                        qzStatus === 'error' ? 'text-red-700' :
+                          qzStatus === 'connecting' ? 'text-blue-700' :
+                            'text-slate-600'
+                      }`}>
+                      {qzStatus === 'connected' ? 'QZ Tray connected' :
+                        qzStatus === 'connecting' ? 'Connecting to QZ Tray…' :
+                          qzStatus === 'error' ? 'QZ Tray not available' :
+                            'QZ Tray'}
+                    </span>
+                  </div>
+                  {(qzStatus === 'error' || qzStatus === 'idle') && (
+                    <button
+                      onClick={handleQzReconnect}
+                      className="text-xs font-medium text-blue-600 hover:text-blue-700 underline"
+                    >
+                      Retry
+                    </button>
+                  )}
+                </div>
+
+                {/* Error message */}
+                {qzStatus === 'error' && qzError && (
+                  <p className="text-xs text-red-600">{qzError}</p>
+                )}
+
+                {/* Not installed help */}
+                {qzStatus === 'error' && (
+                  <p className="text-xs text-slate-500">
+                    QZ Tray must be running on this computer.{' '}
+                    <a
+                      href="https://qz.io/download/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-blue-600 underline"
+                    >
+                      Download QZ Tray
+                    </a>
+                    , install it, then click Retry.
+                  </p>
+                )}
+
+                {/* Printer selector when connected */}
+                {qzStatus === 'connected' && qzPrinters.length > 0 && (
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-emerald-800">
+                      Printer
+                    </label>
+                    <select
+                      value={qzPrinter}
+                      onChange={e => setQzPrinter(e.target.value)}
+                      className="w-full text-xs border border-emerald-300 rounded-lg px-3 py-2 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                    >
+                      {qzPrinters.map(p => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] text-emerald-600">
+                      Labels will print directly — no dialog, no PDF.
+                    </p>
+                  </div>
+                )}
+
+                {/* Connected but no printers found */}
+                {qzStatus === 'connected' && qzPrinters.length === 0 && (
+                  <p className="text-xs text-amber-700">
+                    No printers found. Make sure your Shreyans Barcode Printer is connected and its driver is installed.
+                  </p>
+                )}
+              </div>
+
+              <p className="text-xs text-slate-400">
+                Each label contains a unique Code 128 barcode. Sized for 2″×1″ thermal paper.
+              </p>
             </div>
+
+            {/* Footer actions */}
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
-              <button onClick={() => setPrintTarget(null)} className="px-4 py-2 text-sm font-medium text-slate-500 border border-slate-200 rounded-xl hover:bg-white transition-all">Print Later</button>
-              <button onClick={() => { window.open(printTarget.barcodePrintUrl, '_blank'); }}
-                className="inline-flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-all">
-                <Icon name="PrinterIcon" size={15} className="text-white" />
-                Print {printTarget.qty} New Label{printTarget.qty !== 1 ? 's' : ''}
+              <button
+                onClick={() => setPrintTarget(null)}
+                className="px-4 py-2 text-sm font-medium text-slate-500 border border-slate-200 rounded-xl hover:bg-white transition-all"
+              >
+                Print Later
+              </button>
+              <button
+                onClick={() => handlePrintLabels(printTarget.barcodePrintUrl)}
+                disabled={isPrinting || qzStatus === 'connecting' || (qzStatus === 'connected' && !qzPrinter)}
+                className="inline-flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-sm font-semibold rounded-xl transition-all"
+              >
+                {isPrinting ? (
+                  <><div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />Printing…</>
+                ) : qzStatus === 'connected' ? (
+                  <><Icon name="PrinterIcon" size={15} className="text-white" />Print Direct — {printTarget.qty} Label{printTarget.qty !== 1 ? 's' : ''}</>
+                ) : (
+                  <><Icon name="PrinterIcon" size={15} className="text-white" />Print {printTarget.qty} Label{printTarget.qty !== 1 ? 's' : ''} (via dialog)</>
+                )}
               </button>
             </div>
           </div>

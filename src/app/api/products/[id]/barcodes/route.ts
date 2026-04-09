@@ -99,6 +99,24 @@ export async function GET(request: NextRequest, context: RouteContext) {
       images.push(...rendered);
     }
 
+    // ── JSON response for QZ Tray direct printing ─────────────────────────
+    // When ?format=json is passed, return raw base64 label data instead of HTML.
+    // The browser-side QZ Tray client consumes this to print without any dialog.
+    const format = request.nextUrl.searchParams.get('format');
+    if (format === 'json') {
+      const labels = images.map((src, idx) => {
+        const unitNum = fromUnit + Math.floor(idx / copies);
+        const code = `${prefix}-${zeroPad(unitNum, padWidth)}`;
+        return { code, pngBase64: src };
+      });
+      return NextResponse.json({
+        productName: product.name,
+        sku: product.sku,
+        price: product.price,
+        labels,
+      }, { headers: { 'Cache-Control': 'no-store' } });
+    }
+
     // Build the printable HTML page
     const labelItems = images
       .map(
@@ -219,23 +237,44 @@ export async function GET(request: NextRequest, context: RouteContext) {
       font-family: monospace;
     }
 
+    /* ── Thermal printer: one label = one 2×1 inch page ── */
+    @page {
+      size: 2in 1in portrait;
+      margin: 0;
+    }
+
     /* ── Print styles ── */
     @media print {
-      body { background: #fff; padding: 4mm; }
+      html, body { background: #fff; margin: 0; padding: 0; }
       .toolbar { display: none !important; }
-      .grid { gap: 4mm; }
+      .grid { display: block; gap: 0; }
 
-      /* 2 × 1 inch label for thermal; ~50.8 × 25.4 mm */
+      /* Each label fills exactly one thermal strip */
       .label {
-        width: 50.8mm;
-        border: 0.4pt solid #aaa;
+        width: 2in;
+        height: 1in;
+        border: none;
         border-radius: 0;
         padding: 1.5mm 2mm;
+        page-break-after: always;
+        break-after: page;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
       }
 
-      .label .unit-price   { font-size: 7pt; font-weight: 800; }
+      /* Last label — no extra blank page after it */
+      .label:last-child {
+        page-break-after: avoid;
+        break-after: avoid;
+      }
+
+      .label .unit-price   { font-size: 7.5pt; font-weight: 800; }
       .label .product-name { font-size: 7pt; }
       .label .unit-info    { font-size: 6pt; }
+      .label img           { max-width: 1.8in; max-height: 0.45in; height: auto; }
     }
   </style>
 </head>
@@ -251,10 +290,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
 ${labelItems}
   </div>
   <script>
-    // Auto-open print dialog when the page loads (useful for direct printing)
-    window.addEventListener('load', () => {
-      // Small delay so images are fully rendered
-      setTimeout(() => { window.print(); }, 600);
+    // Print button in toolbar — send to physical printer
+    document.addEventListener('DOMContentLoaded', function () {
+      var btn = document.querySelector('.btn-print');
+      if (btn) {
+        btn.addEventListener('click', function () { window.print(); });
+        btn.removeAttribute('onclick');
+      }
     });
   </script>
 </body>
