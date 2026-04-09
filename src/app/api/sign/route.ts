@@ -24,9 +24,16 @@ function loadPrivateKey(): string {
     }
 }
 
+// In production the key is stable, so caching is fine.
+// In development, clear the cache when the file changes via HMR.
 let _privateKey: string | null = null;
 
 function getPrivateKey(): string {
+    if (process.env.NODE_ENV !== 'production') {
+        // Always re-read in dev so key rotation (certificate regeneration)
+        // is picked up without a full server restart.
+        return loadPrivateKey();
+    }
     if (!_privateKey) _privateKey = loadPrivateKey();
     return _privateKey;
 }
