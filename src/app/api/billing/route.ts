@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
     const billNumber  = String(body.billNumber ?? `BILL-${Date.now()}`).trim();
     const customerName  = String(body.customerName ?? '').trim();
     const customerPhone = String(body.customerPhone ?? '').trim();
+    const gstRate       = Math.max(0, Math.min(100, Number(body.gstRate ?? 0)));
 
     if (!shopId) {
       return NextResponse.json({ error: 'shopId is required.' }, { status: 400 });
@@ -126,7 +127,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const subtotal = receiptItems.reduce((s, i) => s + i.lineTotal, 0);
+    const subtotal   = parseFloat(receiptItems.reduce((s, i) => s + i.lineTotal, 0).toFixed(2));
+    const gstAmount  = parseFloat((subtotal * gstRate / 100).toFixed(2));
+    const total      = parseFloat((subtotal + gstAmount).toFixed(2));
 
     // Persist the bill as a permanent record
     await BillModel.create({
@@ -134,7 +137,9 @@ export async function POST(request: NextRequest) {
       shopId,
       items: receiptItems,
       subtotal,
-      total: subtotal,
+      gstRate,
+      gstAmount,
+      total,
       customerName,
       customerPhone,
       performedBy,
@@ -149,7 +154,9 @@ export async function POST(request: NextRequest) {
           shopId,
           items: receiptItems,
           subtotal,
-          total: subtotal,     // extend here if you add tax/discount later
+          gstRate,
+          gstAmount,
+          total,
           performedBy,
           note,
           customerName,

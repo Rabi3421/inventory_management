@@ -23,7 +23,9 @@ export interface Bill {
   shopId: string;
   items: BillItem[];
   subtotal: number;
-  total: number;
+  gstRate: number;      // percentage, e.g. 5 / 12 / 18 / 28 / 0
+  gstAmount: number;    // subtotal * gstRate / 100
+  total: number;        // subtotal + gstAmount
   customerName: string;
   customerPhone: string;
   performedBy: string;
@@ -64,8 +66,10 @@ const billSchema = new Schema<Bill>(
       type: [billItemSchema],
       required: true,
     },
-    subtotal: { type: Number, required: true, min: 0 },
-    total:    { type: Number, required: true, min: 0 },
+    subtotal:   { type: Number, required: true, min: 0 },
+    gstRate:    { type: Number, required: true, min: 0, default: 0 },
+    gstAmount:  { type: Number, required: true, min: 0, default: 0 },
+    total:      { type: Number, required: true, min: 0 },
     customerName:  { type: String, trim: true, default: '' },
     customerPhone: { type: String, trim: true, default: '' },
     performedBy:   { type: String, trim: true, default: 'shop-admin' },

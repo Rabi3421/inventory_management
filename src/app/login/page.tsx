@@ -45,7 +45,7 @@ function BrandPanel() {
               <path d="M16 21V5C16 3.9 15.1 3 14 3H10C8.9 3 8 3.9 8 5V21" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
-          <span className="text-white font-semibold text-lg tracking-tight">ShopInventory</span>
+          <span className="text-white font-semibold text-lg tracking-tight">श्री राम स्टोर्स</span>
         </div>
       </div>
       {/* Main copy */}
@@ -78,7 +78,7 @@ function BrandPanel() {
       </div>
       {/* Footer */}
       <div className="relative z-10">
-        <p className="text-indigo-300 text-xs">© 2026 ShopInventory. All rights reserved.</p>
+        <p className="text-indigo-300 text-xs">© 2026 श्री राम स्टोर्स. सर्वाधिकार सुरक्षित।</p>
       </div>
     </div>
   );
