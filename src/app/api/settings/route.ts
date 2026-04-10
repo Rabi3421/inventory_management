@@ -41,6 +41,7 @@ export async function PUT(request: NextRequest) {
       'notifLowStockEmail', 'notifOutOfStockEmail', 'notifWeeklyReport',
       'notifNewUserAlert', 'notifShopSyncError', 'notifRestockApproved',
       'secTwoFactor', 'secSessionTimeout', 'secIpWhitelist', 'secAuditLog',
+      'gstEnabled', 'gstRate',
       'shopOpenTime', 'shopCloseTime', 'autoLowStockAlerts', 'autoRestockRequest',
     ];
     const update: Record<string, unknown> = {};

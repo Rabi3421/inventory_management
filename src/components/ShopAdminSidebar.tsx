@@ -71,17 +71,29 @@ export default function ShopAdminSidebar({ activeRoute = '/shop-admin/dashboard'
       `}
     >
       {/* Logo + Shop Badge */}
-      <div className={`flex items-center h-16 px-4 border-b border-slate-100 ${collapsed ? 'justify-center' : 'gap-3'}`}>
-        <AppLogo size={32} />
-        {!collapsed && (
-          <div className="min-w-0">
-            <span className="font-semibold text-slate-800 text-sm tracking-tight block truncate">
-              ShopInventory
-            </span>
-            <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded-full">
-              Shop Admin
-            </span>
-          </div>
+      <div className={`flex items-center border-b border-slate-100 bg-gradient-to-br from-emerald-700 to-emerald-900 ${collapsed ? 'h-16 justify-center px-3' : 'h-20 gap-3 px-4'}`}>
+        {collapsed ? (
+          <img
+            src="/assets/images/srs1.png"
+            alt="SRS"
+            className="w-10 h-10 object-contain drop-shadow-md"
+          />
+        ) : (
+          <>
+            <img
+              src="/assets/images/srs1.png"
+              alt="SRS Logo"
+              className="w-12 h-12 object-contain drop-shadow-md shrink-0"
+            />
+            <div className="min-w-0">
+              <span className="font-black text-white text-base tracking-wide block truncate leading-tight">
+                श्री राम स्टोर्स
+              </span>
+              <span className="text-[10px] text-emerald-200 font-semibold tracking-widest uppercase block mt-0.5">
+                Shop Admin
+              </span>
+            </div>
+          </>
         )}
       </div>
 

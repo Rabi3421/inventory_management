@@ -68,7 +68,7 @@ export default function LoginForm() {
       {/* Header */}
       <div className="flex items-center gap-3 mb-8 lg:hidden">
         <AppLogo size={36} />
-        <span className="font-semibold text-slate-800 text-base">ShopInventory</span>
+        <span className="font-semibold text-slate-800 text-base">श्री राम स्टोर्स</span>
       </div>
 
       <div className="mb-8">

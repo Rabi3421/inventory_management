@@ -66,12 +66,29 @@ export default function Sidebar({ activeRoute = '/dashboard' }: SidebarProps) {
       `}
     >
       {/* Logo */}
-      <div className={`flex items-center h-16 px-4 border-b border-slate-100 ${collapsed ? 'justify-center' : 'gap-3'}`}>
-        <AppLogo size={32} />
-        {!collapsed && (
-          <span className="font-semibold text-slate-800 text-sm tracking-tight truncate">
-            ShopInventory
-          </span>
+      <div className={`flex items-center border-b border-slate-100 bg-gradient-to-br from-indigo-700 to-indigo-900 ${collapsed ? 'h-16 justify-center px-3' : 'h-20 gap-3 px-4'}`}>
+        {collapsed ? (
+          <img
+            src="/assets/images/srs1.png"
+            alt="SRS"
+            className="w-10 h-10 object-contain drop-shadow-md"
+          />
+        ) : (
+          <>
+            <img
+              src="/assets/images/srs1.png"
+              alt="SRS Logo"
+              className="w-12 h-12 object-contain drop-shadow-md shrink-0"
+            />
+            <div className="min-w-0">
+              <span className="font-black text-white text-base tracking-wide block truncate leading-tight">
+                श्री राम स्टोर्स
+              </span>
+              <span className="text-[10px] text-indigo-200 font-semibold tracking-widest uppercase block mt-0.5">
+                Superadmin
+              </span>
+            </div>
+          </>
         )}
       </div>
 

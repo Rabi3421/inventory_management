@@ -25,10 +25,12 @@ interface AppSettings {
   secSessionTimeout: boolean;
   secIpWhitelist: boolean;
   secAuditLog: boolean;
+  gstEnabled: boolean;
+  gstRate: number;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-  orgName: 'ShopInventory Ltd.',
+  orgName: 'श्री राम स्टोर्स',
   currency: 'INR',
   timezone: 'Asia/Kolkata',
   dateFormat: 'DD/MM/YYYY',
@@ -45,6 +47,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   secSessionTimeout: false,
   secIpWhitelist: false,
   secAuditLog: true,
+  gstEnabled: false,
+  gstRate: 0,
 };
 
 const tabs: { key: SettingsTab; label: string; icon: string }[] = [
@@ -485,6 +489,62 @@ export default function SettingsPage() {
             </SectionCard>
 
             {saveError && <p className="text-sm text-red-600 text-right">{saveError}</p>}
+
+            {/* GST Configuration */}
+            <SectionCard title="GST / Tax Configuration" description="Set a default GST rate that auto-applies on every new bill">
+              {loading ? (
+                <div className="space-y-4 py-3">
+                  {Array.from({length: 2}).map((_,i) => (
+                    <div key={i} className="flex justify-between items-center">
+                      <div className="h-3.5 bg-slate-100 rounded w-44 animate-pulse" />
+                      <div className="h-8 bg-slate-100 rounded w-28 animate-pulse" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <>
+                  <SettingRow
+                    label="Enable GST"
+                    description="When enabled, the default rate below is automatically applied to every bill. Shop admins won't need to choose manually."
+                  >
+                    <Toggle enabled={settings.gstEnabled} onChange={v => set('gstEnabled', v)} />
+                  </SettingRow>
+                  <SettingRow
+                    label="Default GST Rate"
+                    description="Applied automatically when GST is enabled. Enter the exact percentage (e.g. 5, 12, 18, 28)."
+                  >
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={0.01}
+                        disabled={!settings.gstEnabled}
+                        value={settings.gstRate}
+                        onChange={e => {
+                          const v = parseFloat(e.target.value);
+                          set('gstRate', isNaN(v) ? 0 : Math.min(100, Math.max(0, v)));
+                        }}
+                        className={`w-24 text-center ${ib} disabled:opacity-40 disabled:cursor-not-allowed`}
+                        placeholder="e.g. 18"
+                      />
+                      <span className="text-sm font-semibold text-slate-500">%</span>
+                    </div>
+                  </SettingRow>
+                  {settings.gstEnabled && (
+                    <div className="flex items-center gap-2 mx-0 mb-2 px-3 py-2.5 bg-indigo-50 border border-indigo-100 rounded-xl">
+                      <Icon name="InformationCircleIcon" size={15} className="text-indigo-500 shrink-0" />
+                      <p className="text-xs text-indigo-700">
+                        {settings.gstRate === 0
+                          ? 'GST is enabled but rate is set to 0% — no tax will be added.'
+                          : `All new bills will automatically include ${settings.gstRate}% GST. Shop admins can still override it per bill if needed.`
+                        }
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+            </SectionCard>
 
             {/* Data Migration */}
             <SectionCard title="Data Migration" description="Assign existing products that are missing a shop to a specific shop">
