@@ -9,10 +9,13 @@ import { useAuth } from '@/contexts/AuthContext';
 interface BillItem {
   productId: string;
   sku: string;
+  hsnCode?: string;
   name: string;
   qty: number;
   unitPrice: number;
   lineTotal: number;
+  gstRate?: number;
+  gstAmount?: number;
   balanceAfter: number;
 }
 
@@ -74,20 +77,91 @@ function timeStr(iso: string) {
   });
 }
 
+interface GstBreakupRow {
+  rate: number;
+  taxableAmount: number;
+  gstAmount: number;
+  grossAmount: number;
+}
+
+interface GstSplit {
+  rate: number;
+  amount: number;
+}
+
+function buildGstBreakup(items: Array<Pick<BillItem, 'gstRate' | 'gstAmount' | 'lineTotal'>>) {
+  const groups = new Map<number, GstBreakupRow>();
+
+  for (const item of items) {
+    const rate = Number(item.gstRate ?? 0);
+    const gst = Number(item.gstAmount ?? 0);
+    const gross = Number(item.lineTotal ?? 0);
+    const taxable = parseFloat((gross - gst).toFixed(2));
+    const current = groups.get(rate) ?? { rate, taxableAmount: 0, gstAmount: 0, grossAmount: 0 };
+
+    current.taxableAmount = parseFloat((current.taxableAmount + taxable).toFixed(2));
+    current.gstAmount = parseFloat((current.gstAmount + gst).toFixed(2));
+    current.grossAmount = parseFloat((current.grossAmount + gross).toFixed(2));
+    groups.set(rate, current);
+  }
+
+  return Array.from(groups.values())
+    .filter(row => row.gstAmount > 0)
+    .sort((left, right) => right.rate - left.rate);
+}
+
+function gstSummaryLabel(rate: number) {
+  return rate > 0 ? `Included GST @ ${rate}%` : 'Included GST';
+}
+
+function splitGstEqually(amount: number, rate: number) {
+  const cgstRate = parseFloat((rate / 2).toFixed(2));
+  const sgstRate = parseFloat((rate - cgstRate).toFixed(2));
+  const cgstAmount = parseFloat((amount / 2).toFixed(2));
+  const sgstAmount = parseFloat((amount - cgstAmount).toFixed(2));
+
+  return {
+    cgst: { rate: cgstRate, amount: cgstAmount } satisfies GstSplit,
+    sgst: { rate: sgstRate, amount: sgstAmount } satisfies GstSplit,
+  };
+}
+
 // ── Print a standalone receipt HTML in a new window ────────────────────────────
 
 function openReceiptWindow(bill: Bill, shopName: string) {
+  const gstBreakup = buildGstBreakup(bill.items);
+  const hasMixedGstRates = gstBreakup.length > 1;
   const itemRows = bill.items.map((item, i) => `
       <tr>
         <td class="l" style="color:#94a3b8;font-size:10px">${i + 1}</td>
         <td class="l">
           <div class="item-name">${item.name}</div>
           <div class="item-sku">${item.sku}</div>
+          <div class="item-meta">${item.hsnCode ? `HSN: ${item.hsnCode}` : ''}${item.hsnCode && (item.gstAmount ?? 0) > 0 ? ' · ' : ''}${(item.gstAmount ?? 0) > 0 ? `${item.gstRate ?? 0}% GST incl. ${fmt(item.gstAmount ?? 0)}` : ''}</div>
         </td>
         <td class="c">${item.qty}</td>
         <td class="r">${fmt(item.unitPrice)}</td>
         <td class="r">${fmt(item.lineTotal)}</td>
       </tr>`).join('');
+
+  const gstRows = gstBreakup.map(row => {
+    const { cgst, sgst } = splitGstEqually(row.gstAmount, row.rate);
+    return `
+      <div class="gst-break-group">
+        <div class="gst-break-head">
+          <span>${gstSummaryLabel(row.rate)}</span>
+          <span>${fmt(row.gstAmount)}</span>
+        </div>
+        <div class="gst-break-row">
+          <span>CGST @ ${cgst.rate}%</span>
+          <span>${fmt(cgst.amount)}</span>
+        </div>
+        <div class="gst-break-row">
+          <span>SGST @ ${sgst.rate}%</span>
+          <span>${fmt(sgst.amount)}</span>
+        </div>
+      </div>`;
+  }).join('');
 
   const totalItems = bill.items.reduce((s, i) => s + i.qty, 0);
   const pdfTitle = `Receipt-${bill.billNumber}`;
@@ -186,6 +260,7 @@ function openReceiptWindow(bill: Bill, shopName: string) {
     td:last-child  { padding-right: 10px; font-weight: 700; color: #0f172a; }
     .item-name { font-weight: 600; color: #0f172a; }
     .item-sku  { font-size: 9px; color: #94a3b8; font-family: monospace; margin-top: 1px; }
+    .item-meta { font-size: 9px; color: #64748b; margin-top: 2px; }
     td.c { text-align: center; }
     tbody tr:last-child td { border-bottom: none; }
 
@@ -210,6 +285,50 @@ function openReceiptWindow(bill: Bill, shopName: string) {
       background: #fef3c7;
       border-radius: 4px;
       margin: 3px 0;
+    }
+    .gst-break-wrap {
+      margin-top: 6px;
+      padding: 7px 8px;
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      border-radius: 8px;
+    }
+    .gst-break-title {
+      font-size: 9px;
+      font-weight: 700;
+      color: #9a3412;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      margin-bottom: 5px;
+    }
+    .gst-break-group {
+      padding-top: 4px;
+    }
+    .gst-break-group + .gst-break-group {
+      margin-top: 6px;
+      border-top: 1px dashed #fdba74;
+    }
+    .gst-break-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 10px;
+      font-weight: 700;
+      color: #9a3412;
+      padding: 2px 0 4px;
+    }
+    .gst-break-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 9px;
+      color: #7c2d12;
+      padding: 2px 0;
+    }
+    .gst-note {
+      margin-top: 5px;
+      font-size: 9px;
+      color: #92400e;
     }
     .t-total {
       display: flex;
@@ -299,9 +418,13 @@ function openReceiptWindow(bill: Bill, shopName: string) {
   <!-- Totals -->
   <div class="totals-wrap">
     <div class="totals-box">
-      <div class="t-row"><span>Subtotal</span><span>${fmt(bill.subtotal)}</span></div>
-      ${(bill.gstRate ?? 0) > 0
-        ? `<div class="t-gst"><span>GST @ ${bill.gstRate}%</span><span>+ ${fmt(bill.gstAmount ?? 0)}</span></div>`
+      <div class="t-row"><span>Taxable Subtotal</span><span>${fmt(bill.subtotal)}</span></div>
+      ${(bill.gstAmount ?? 0) > 0
+        ? `<div class="t-gst"><span>${hasMixedGstRates ? 'Included GST (Total)' : gstSummaryLabel(bill.gstRate ?? 0)}</span><span>${fmt(bill.gstAmount ?? 0)}</span></div>`
+        : ''
+      }
+      ${gstBreakup.length > 0
+        ? `<div class="gst-break-wrap"><div class="gst-break-title">GST Breakup</div>${gstRows}<div class="gst-note">Unit prices already include GST.</div></div>`
         : ''
       }
       <div class="t-total"><span class="lbl">Total</span><span class="amt">${fmt(bill.total)}</span></div>
@@ -812,6 +935,11 @@ export default function BillsPage() {
 
       {/* ── Bill Detail Modal ─────────────────────────────────────────────────── */}
       {selectedBill && (
+        (() => {
+          const gstBreakup = buildGstBreakup(selectedBill.items);
+          const hasMixedGstRates = gstBreakup.length > 1;
+
+          return (
         <div
           className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={() => setSelectedBill(null)}
@@ -899,6 +1027,13 @@ export default function BillsPage() {
                         <td className="py-3 px-2">
                           <div className="font-semibold text-slate-800">{item.name}</div>
                           <div className="text-[11px] text-slate-400 font-mono">{item.sku}</div>
+                          {(item.hsnCode || (item.gstAmount ?? 0) > 0) && (
+                            <div className="text-[11px] text-slate-500 mt-0.5">
+                              {item.hsnCode ? <span>HSN: {item.hsnCode}</span> : null}
+                              {item.hsnCode && (item.gstAmount ?? 0) > 0 ? <span>&nbsp;·&nbsp;</span> : null}
+                              {(item.gstAmount ?? 0) > 0 ? <span>{item.gstRate ?? 0}% GST incl. {fmt(item.gstAmount ?? 0)}</span> : null}
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 px-2 text-center text-slate-700">{item.qty}</td>
                         <td className="py-3 px-2 text-right text-slate-500 text-xs">{fmt(item.unitPrice)}</td>
@@ -911,13 +1046,38 @@ export default function BillsPage() {
                 {/* Totals block */}
                 <div className="mt-4 ml-auto w-72 space-y-1.5">
                   <div className="flex justify-between text-sm text-slate-500 border-t border-dashed border-slate-200 pt-3">
-                    <span>Subtotal</span><span>{fmt(selectedBill.subtotal)}</span>
+                    <span>Taxable Subtotal</span><span>{fmt(selectedBill.subtotal)}</span>
                   </div>
-                  {(selectedBill.gstRate ?? 0) > 0 ? (
+                  {(selectedBill.gstAmount ?? 0) > 0 ? (
                     <div className="flex justify-between text-sm text-amber-700 bg-amber-50 rounded-lg px-2 py-1">
-                      <span>GST ({selectedBill.gstRate}%)</span><span>+{fmt(selectedBill.gstAmount ?? 0)}</span>
+                      <span>{hasMixedGstRates ? 'Included GST (Total)' : gstSummaryLabel(selectedBill.gstRate ?? 0)}</span><span>{fmt(selectedBill.gstAmount ?? 0)}</span>
                     </div>
                   ) : null}
+                  {gstBreakup.length > 0 && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-sm text-amber-800 space-y-1">
+                      <div className="text-[11px] font-semibold uppercase tracking-wider text-amber-700">GST Breakup</div>
+                      {gstBreakup.map(row => {
+                        const { cgst, sgst } = splitGstEqually(row.gstAmount, row.rate);
+                        return (
+                          <div key={row.rate} className="rounded-lg bg-white/60 border border-amber-100 px-2.5 py-2 space-y-1">
+                            <div className="flex justify-between gap-3 text-xs font-semibold text-amber-800">
+                              <span>{gstSummaryLabel(row.rate)}</span>
+                              <span>{fmt(row.gstAmount)}</span>
+                            </div>
+                            <div className="flex justify-between gap-3 text-[11px] text-amber-700">
+                              <span>CGST @ {cgst.rate}%</span>
+                              <span>{fmt(cgst.amount)}</span>
+                            </div>
+                            <div className="flex justify-between gap-3 text-[11px] text-amber-700">
+                              <span>SGST @ {sgst.rate}%</span>
+                              <span>{fmt(sgst.amount)}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <div className="pt-1 text-[11px] text-amber-700">Unit prices already include GST.</div>
+                    </div>
+                  )}
                   <div className="flex justify-between items-baseline pt-2 border-t-2 border-slate-800">
                     <span className="text-base font-extrabold text-slate-900">TOTAL</span>
                     <span className="text-2xl font-black text-emerald-700">{fmt(selectedBill.total)}</span>
@@ -944,6 +1104,8 @@ export default function BillsPage() {
             </div>
           </div>
         </div>
+          );
+        })()
       )}
     </ShopAdminLayout>
   );

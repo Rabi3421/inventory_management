@@ -25,8 +25,6 @@ interface AppSettings {
   secSessionTimeout: boolean;
   secIpWhitelist: boolean;
   secAuditLog: boolean;
-  gstEnabled: boolean;
-  gstRate: number;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -47,8 +45,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   secSessionTimeout: false,
   secIpWhitelist: false,
   secAuditLog: true,
-  gstEnabled: false,
-  gstRate: 0,
 };
 
 const tabs: { key: SettingsTab; label: string; icon: string }[] = [
@@ -490,8 +486,7 @@ export default function SettingsPage() {
 
             {saveError && <p className="text-sm text-red-600 text-right">{saveError}</p>}
 
-            {/* GST Configuration */}
-            <SectionCard title="GST / Tax Configuration" description="Set a default GST rate that auto-applies on every new bill">
+            <SectionCard title="Billing Tax Handling" description="GST is now stored per product and included in each product's unit price">
               {loading ? (
                 <div className="space-y-4 py-3">
                   {Array.from({length: 2}).map((_,i) => (
@@ -502,47 +497,15 @@ export default function SettingsPage() {
                   ))}
                 </div>
               ) : (
-                <>
-                  <SettingRow
-                    label="Enable GST"
-                    description="When enabled, the default rate below is automatically applied to every bill. Shop admins won't need to choose manually."
-                  >
-                    <Toggle enabled={settings.gstEnabled} onChange={v => set('gstEnabled', v)} />
-                  </SettingRow>
-                  <SettingRow
-                    label="Default GST Rate"
-                    description="Applied automatically when GST is enabled. Enter the exact percentage (e.g. 5, 12, 18, 28)."
-                  >
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        step={0.01}
-                        disabled={!settings.gstEnabled}
-                        value={settings.gstRate}
-                        onChange={e => {
-                          const v = parseFloat(e.target.value);
-                          set('gstRate', isNaN(v) ? 0 : Math.min(100, Math.max(0, v)));
-                        }}
-                        className={`w-24 text-center ${ib} disabled:opacity-40 disabled:cursor-not-allowed`}
-                        placeholder="e.g. 18"
-                      />
-                      <span className="text-sm font-semibold text-slate-500">%</span>
+                <div className="space-y-3 py-3">
+                  <div className="flex items-start gap-3 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
+                    <Icon name="InformationCircleIcon" size={16} className="mt-0.5 shrink-0 text-indigo-500" />
+                    <div>
+                      <p className="text-sm font-semibold text-indigo-900">Per-product GST pricing is active</p>
+                      <p className="mt-1 text-xs text-indigo-700">Set the included GST percentage directly on each product while adding or editing it. Billing now reverse-calculates the included GST from the product's GST-included unit price.</p>
                     </div>
-                  </SettingRow>
-                  {settings.gstEnabled && (
-                    <div className="flex items-center gap-2 mx-0 mb-2 px-3 py-2.5 bg-indigo-50 border border-indigo-100 rounded-xl">
-                      <Icon name="InformationCircleIcon" size={15} className="text-indigo-500 shrink-0" />
-                      <p className="text-xs text-indigo-700">
-                        {settings.gstRate === 0
-                          ? 'GST is enabled but rate is set to 0% — no tax will be added.'
-                          : `All new bills will automatically include ${settings.gstRate}% GST. Shop admins can still override it per bill if needed.`
-                        }
-                      </p>
-                    </div>
-                  )}
-                </>
+                  </div>
+                </div>
               )}
             </SectionCard>
 

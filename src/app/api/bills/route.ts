@@ -11,6 +11,7 @@ import { BillModel } from '@/lib/models/Bill';
  *   page      — default 1
  *   limit     — default 20, max 100
  *   search    — optional: matches billNumber, customerName, customerPhone
+ *   performedByUserId — optional exact employee filter
  *   dateFrom  — optional ISO date string (inclusive start)
  *   dateTo    — optional ISO date string (inclusive end)
  *   gstSummary — if "true", returns GST aggregation instead of bill list
@@ -22,6 +23,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = request.nextUrl;
     const shopId     = searchParams.get('shopId')?.trim() ?? '';
+    const performedByUserId = searchParams.get('performedByUserId')?.trim() ?? '';
     const dateFrom   = searchParams.get('dateFrom')?.trim() ?? '';
     const dateTo     = searchParams.get('dateTo')?.trim()   ?? '';
     const gstSummary = searchParams.get('gstSummary') === 'true';
@@ -93,6 +95,10 @@ export async function GET(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const filter: Record<string, any> = { shopId };
 
+    if (performedByUserId) {
+      filter.performedByUserId = performedByUserId;
+    }
+
     if (search) {
       filter.$or = [
         { billNumber:     { $regex: search, $options: 'i' } },
@@ -136,6 +142,8 @@ export async function GET(request: NextRequest) {
         customerName:  b.customerName,
         customerPhone: b.customerPhone,
         performedBy:   b.performedBy,
+        performedByUserId: b.performedByUserId ?? '',
+        performedByRole: b.performedByRole ?? '',
         note:          b.note,
         createdAt:     b.createdAt.toISOString(),
       })),

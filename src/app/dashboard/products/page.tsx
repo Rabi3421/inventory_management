@@ -3,21 +3,34 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useMemo,
   useRef,
 } from 'react';
 import AppLayout from '@/components/AppLayout';
 import Icon from '@/components/ui/AppIcon';
+import { INDIAN_STATES_AND_UTS } from '@/lib/locations/india';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Product {
   _id: string;
   sku: string;
+  hsnCode?: string;
+  sourceState?: string;
+  sourceDistrict?: string;
   name: string;
   description: string;
   price: number;
   totalQty: number;
   availableQty: number;
+  gauge?: string;
+  weight?: string;
+  purchasePrice?: number;
+  purchaseDate?: string | null;
+  tax?: number;
+  saleGstRate?: number;
+  transportationCost?: number;
+  lowStockAlertQty?: number | null;
   createdAt: string;
 }
 
@@ -34,7 +47,18 @@ interface FormState {
   price: string;
   description: string;
   sku: string;
+  hsnCode: string;
+  sourceState: string;
+  sourceDistrict: string;
   skuMode: 'auto' | 'manual';
+  gauge: string;
+  weight: string;
+  purchasePrice: string;
+  purchaseDate: string;
+  tax: string;
+  saleGstRate: string;
+  transportationCost: string;
+  lowStockAlertQty: string;
 }
 
 interface EditState {
@@ -44,6 +68,17 @@ interface EditState {
   availableQty: string;
   description: string;
   sku: string;
+  hsnCode: string;
+  sourceState: string;
+  sourceDistrict: string;
+  gauge: string;
+  weight: string;
+  purchasePrice: string;
+  purchaseDate: string;
+  tax: string;
+  saleGstRate: string;
+  transportationCost: string;
+  lowStockAlertQty: string;
 }
 
 type SortKey = 'name' | 'price' | 'totalQty' | 'availableQty' | 'createdAt';
@@ -74,7 +109,18 @@ const EMPTY_FORM: FormState = {
   price: '',
   description: '',
   sku: '',
+  hsnCode: '',
+  sourceState: '',
+  sourceDistrict: '',
   skuMode: 'auto',
+  gauge: '',
+  weight: '',
+  purchasePrice: '',
+  purchaseDate: '',
+  tax: '',
+  saleGstRate: '',
+  transportationCost: '',
+  lowStockAlertQty: '',
 };
 
 const PAGE_SIZE = 50;
@@ -106,6 +152,20 @@ function FormField({
   );
 }
 
+function toOptionalThreshold(value: string) {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  if (Number.isNaN(parsed) || parsed < 0) return null;
+  return Math.floor(parsed);
+}
+
+function toOptionalRate(value: string) {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) return null;
+  return Number(parsed.toFixed(2));
+}
+
 // ─── Page component ───────────────────────────────────────────────────────────
 
 export default function ProductsPage() {
@@ -134,10 +194,11 @@ export default function ProductsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [apiError, setApiError] = useState('');
+  const [defaultLowStockThreshold, setDefaultLowStockThreshold] = useState(20);
 
   // ── Edit modal ────────────────────────────────────────────────────────────
   const [editTarget, setEditTarget] = useState<Product | null>(null);
-  const [editState, setEditState] = useState<EditState>({ name: '', price: '', totalQty: '', availableQty: '', description: '', sku: '' });
+  const [editState, setEditState] = useState<EditState>({ name: '', price: '', totalQty: '', availableQty: '', description: '', sku: '', hsnCode: '', sourceState: '', sourceDistrict: '', gauge: '', weight: '', purchasePrice: '', purchaseDate: '', tax: '', saleGstRate: '', transportationCost: '', lowStockAlertQty: '' });
   const [editErrors, setEditErrors] = useState<Partial<Record<keyof EditState, string>>>({});
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editApiError, setEditApiError] = useState('');
@@ -158,6 +219,38 @@ export default function ProductsPage() {
 
   const firstFieldRef = useRef<HTMLInputElement>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const sourceStateOptions = useMemo(
+    () => Array.from(new Set([
+      ...INDIAN_STATES_AND_UTS,
+      ...products.map(product => product.sourceState?.trim()).filter((value): value is string => Boolean(value)),
+    ])).sort((left, right) => left.localeCompare(right)),
+    [products],
+  );
+
+  const sourceDistrictOptions = useMemo(() => {
+    const selectedState = form.sourceState.trim().toLowerCase();
+    return Array.from(
+      new Set(
+        products
+          .filter(product => !selectedState || (product.sourceState ?? '').trim().toLowerCase() === selectedState)
+          .map(product => product.sourceDistrict?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ).sort((left, right) => left.localeCompare(right));
+  }, [form.sourceState, products]);
+
+  const editSourceDistrictOptions = useMemo(() => {
+    const selectedState = editState.sourceState.trim().toLowerCase();
+    return Array.from(
+      new Set(
+        products
+          .filter(product => !selectedState || (product.sourceState ?? '').trim().toLowerCase() === selectedState)
+          .map(product => product.sourceDistrict?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ).sort((left, right) => left.localeCompare(right));
+  }, [editState.sourceState, products]);
 
   // ── Name suggestions fetch (debounced 250ms) ──────────────────────────────
   const fetchNameSuggestions = useCallback((query: string) => {
@@ -223,6 +316,7 @@ export default function ProductsPage() {
       }
       const data = await res.json();
       setProducts(data.products ?? []);
+      setDefaultLowStockThreshold(data.settings?.lowStockThreshold ?? 20);
       setTotalPages(data.pagination?.totalPages ?? 1);
       setTotalCount(data.pagination?.total ?? 0);
       setStats(data.stats ?? { totalProducts: 0, totalUnits: 0, availableUnits: 0, catalogValue: 0 });
@@ -257,6 +351,17 @@ export default function ProductsPage() {
     if (!form.quantity || isNaN(qty) || qty < 1) errors.quantity = 'Enter a valid quantity (≥ 1).';
     const price = Number(form.price);
     if (!form.price || isNaN(price) || price < 0) errors.price = 'Enter a valid price.';
+    if (!form.gauge.trim()) errors.gauge = 'Gauge is required.';
+    if (!form.weight.trim()) errors.weight = 'Weight is required.';
+    const purchasePrice = Number(form.purchasePrice);
+    if (!form.purchasePrice || isNaN(purchasePrice) || purchasePrice < 0) errors.purchasePrice = 'Enter a valid purchasing price.';
+    if (!form.purchaseDate) errors.purchaseDate = 'Purchasing date is required.';
+    const tax = Number(form.tax);
+    if (!form.tax || isNaN(tax) || tax < 0) errors.tax = 'Enter a valid tax amount.';
+    if (form.saleGstRate.trim() && toOptionalRate(form.saleGstRate) === null) errors.saleGstRate = 'Enter a valid GST percentage.';
+    const transportationCost = Number(form.transportationCost);
+    if (!form.transportationCost || isNaN(transportationCost) || transportationCost < 0) errors.transportationCost = 'Enter a valid transportation cost.';
+    if (form.lowStockAlertQty.trim() && toOptionalThreshold(form.lowStockAlertQty) === null) errors.lowStockAlertQty = 'Enter a valid alert quantity.';
     if (form.skuMode === 'manual' && !form.sku.trim()) errors.sku = 'Enter a SKU or switch to Auto.';
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
@@ -279,6 +384,17 @@ export default function ProductsPage() {
           price: Number(form.price),
           quantity: Number(form.quantity),
           sku: form.skuMode === 'manual' ? form.sku.trim() : '',
+          hsnCode: form.hsnCode.trim(),
+          sourceState: form.sourceState.trim(),
+          sourceDistrict: form.sourceDistrict.trim(),
+          gauge: form.gauge.trim(),
+          weight: form.weight.trim(),
+          purchasePrice: Number(form.purchasePrice),
+          purchaseDate: form.purchaseDate,
+          tax: Number(form.tax),
+          saleGstRate: toOptionalRate(form.saleGstRate) ?? 0,
+          transportationCost: Number(form.transportationCost),
+          lowStockAlertQty: toOptionalThreshold(form.lowStockAlertQty),
         }),
       });
       const body = await res.json();
@@ -322,6 +438,17 @@ export default function ProductsPage() {
       availableQty: String(p.availableQty),
       description: p.description,
       sku: p.sku,
+      hsnCode: p.hsnCode ?? '',
+      sourceState: p.sourceState ?? '',
+      sourceDistrict: p.sourceDistrict ?? '',
+      gauge: p.gauge ?? '',
+      weight: p.weight ?? '',
+      purchasePrice: String(p.purchasePrice ?? ''),
+      purchaseDate: p.purchaseDate ?? '',
+      tax: String(p.tax ?? ''),
+      saleGstRate: String(p.saleGstRate ?? ''),
+      transportationCost: String(p.transportationCost ?? ''),
+      lowStockAlertQty: String(p.lowStockAlertQty ?? ''),
     });
     setEditErrors({});
     setEditApiError('');
@@ -349,6 +476,8 @@ export default function ProductsPage() {
     if (isNaN(tq) || tq < 0) errors.totalQty = 'Invalid.';
     const aq = Number(editState.availableQty);
     if (isNaN(aq) || aq < 0 || aq > tq) errors.availableQty = 'Must be ≤ total qty.';
+    if (editState.saleGstRate.trim() && toOptionalRate(editState.saleGstRate) === null) errors.saleGstRate = 'Invalid GST percentage.';
+    if (editState.lowStockAlertQty.trim() && toOptionalThreshold(editState.lowStockAlertQty) === null) errors.lowStockAlertQty = 'Invalid alert quantity.';
     setEditErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -369,6 +498,17 @@ export default function ProductsPage() {
           totalQty: Number(editState.totalQty),
           availableQty: Number(editState.availableQty),
           sku: editState.sku.trim(),
+          hsnCode: editState.hsnCode.trim(),
+          sourceState: editState.sourceState.trim(),
+          sourceDistrict: editState.sourceDistrict.trim(),
+          gauge: editState.gauge.trim(),
+          weight: editState.weight.trim(),
+          purchasePrice: Number(editState.purchasePrice),
+          purchaseDate: editState.purchaseDate || null,
+          tax: Number(editState.tax),
+          saleGstRate: toOptionalRate(editState.saleGstRate) ?? 0,
+          transportationCost: Number(editState.transportationCost),
+          lowStockAlertQty: toOptionalThreshold(editState.lowStockAlertQty),
         }),
       });
       const body = await res.json();
@@ -564,7 +704,7 @@ export default function ProductsPage() {
                 {formErrors.name && <p className="mt-1 text-[11px] text-red-500">{formErrors.name}</p>}
               </FormField>
 
-              <FormField label="Product Price (₹)" required>
+              <FormField label="Product Price (₹, GST Included)" required>
                 <input
                   type="number"
                   min="0"
@@ -642,6 +782,151 @@ export default function ProductsPage() {
                     {formErrors.sku && <p className="mt-1 text-[11px] text-red-500">{formErrors.sku}</p>}
                   </>
                 )}
+              </div>
+            </div>
+
+            {/* Row 3 */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+              <FormField label="Gauge" required>
+                <input
+                  type="text"
+                  placeholder="e.g. 18 Gauge"
+                  value={form.gauge}
+                  onChange={e => setField('gauge', e.target.value)}
+                  className={`${inputBase} ${formErrors.gauge ? 'border-red-300 focus:border-red-400 focus:ring-red-500/20' : ''}`}
+                />
+                {formErrors.gauge && <p className="mt-1 text-[11px] text-red-500">{formErrors.gauge}</p>}
+              </FormField>
+
+              <FormField label="Weight" required>
+                <input
+                  type="text"
+                  placeholder="e.g. 450 gm"
+                  value={form.weight}
+                  onChange={e => setField('weight', e.target.value)}
+                  className={`${inputBase} ${formErrors.weight ? 'border-red-300 focus:border-red-400 focus:ring-red-500/20' : ''}`}
+                />
+                {formErrors.weight && <p className="mt-1 text-[11px] text-red-500">{formErrors.weight}</p>}
+              </FormField>
+
+              <FormField label="HSN Code">
+                <input
+                  type="text"
+                  placeholder="e.g. 732393"
+                  value={form.hsnCode}
+                  onChange={e => setField('hsnCode', e.target.value)}
+                  className={inputBase}
+                />
+              </FormField>
+
+              <FormField label="Source State">
+                <input
+                  type="text"
+                  placeholder="e.g. Maharashtra"
+                  value={form.sourceState}
+                  onChange={e => setField('sourceState', e.target.value)}
+                  list="superadmin-source-state-options"
+                  className={inputBase}
+                />
+              </FormField>
+
+              <FormField label="Source District">
+                <input
+                  type="text"
+                  placeholder="e.g. Pune"
+                  value={form.sourceDistrict}
+                  onChange={e => setField('sourceDistrict', e.target.value)}
+                  list="superadmin-source-district-options"
+                  className={inputBase}
+                />
+              </FormField>
+            </div>
+
+            {/* Row 4 */}
+            <div className="bg-slate-50/70 border border-slate-200 rounded-2xl p-4 mb-5">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-800">Purchase Details</h3>
+                  <p className="text-xs text-slate-400">Record buying cost and transport overhead</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <FormField label="Purchasing Price (₹)" required>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={form.purchasePrice}
+                    onChange={e => setField('purchasePrice', e.target.value)}
+                    className={`${inputBase} ${formErrors.purchasePrice ? 'border-red-300 focus:border-red-400 focus:ring-red-500/20' : ''}`}
+                  />
+                  {formErrors.purchasePrice && <p className="mt-1 text-[11px] text-red-500">{formErrors.purchasePrice}</p>}
+                </FormField>
+
+                <FormField label="Purchasing Date" required>
+                  <input
+                    type="date"
+                    value={form.purchaseDate}
+                    onChange={e => setField('purchaseDate', e.target.value)}
+                    className={`${inputBase} ${formErrors.purchaseDate ? 'border-red-300 focus:border-red-400 focus:ring-red-500/20' : ''}`}
+                  />
+                  {formErrors.purchaseDate && <p className="mt-1 text-[11px] text-red-500">{formErrors.purchaseDate}</p>}
+                </FormField>
+
+                <FormField label="Tax (₹)" required>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={form.tax}
+                    onChange={e => setField('tax', e.target.value)}
+                    className={`${inputBase} ${formErrors.tax ? 'border-red-300 focus:border-red-400 focus:ring-red-500/20' : ''}`}
+                  />
+                  {formErrors.tax && <p className="mt-1 text-[11px] text-red-500">{formErrors.tax}</p>}
+                </FormField>
+
+                <FormField label="Included GST (%)">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    placeholder="e.g. 18"
+                    value={form.saleGstRate}
+                    onChange={e => setField('saleGstRate', e.target.value)}
+                    className={`${inputBase} ${formErrors.saleGstRate ? 'border-red-300 focus:border-red-400 focus:ring-red-500/20' : ''}`}
+                  />
+                  {formErrors.saleGstRate && <p className="mt-1 text-[11px] text-red-500">{formErrors.saleGstRate}</p>}
+                </FormField>
+
+                <FormField label="Transportation Cost (₹)" required>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={form.transportationCost}
+                    onChange={e => setField('transportationCost', e.target.value)}
+                    className={`${inputBase} ${formErrors.transportationCost ? 'border-red-300 focus:border-red-400 focus:ring-red-500/20' : ''}`}
+                  />
+                  {formErrors.transportationCost && <p className="mt-1 text-[11px] text-red-500">{formErrors.transportationCost}</p>}
+                </FormField>
+
+                <FormField label="Low Stock Alert Qty">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder={`Defaults to ${defaultLowStockThreshold}`}
+                    value={form.lowStockAlertQty}
+                    onChange={e => setField('lowStockAlertQty', e.target.value)}
+                    className={`${inputBase} ${formErrors.lowStockAlertQty ? 'border-red-300 focus:border-red-400 focus:ring-red-500/20' : ''}`}
+                  />
+                  {formErrors.lowStockAlertQty && <p className="mt-1 text-[11px] text-red-500">{formErrors.lowStockAlertQty}</p>}
+                </FormField>
               </div>
             </div>
 
@@ -775,10 +1060,11 @@ export default function ProductsPage() {
                   </tr>
                 ) : (
                   products.map(product => {
-                    const stockPct = product.totalQty > 0 ? product.availableQty / product.totalQty : 0;
+                    const effectiveThreshold = product.lowStockAlertQty ?? defaultLowStockThreshold;
+                    const isLowStock = product.availableQty > 0 && product.availableQty <= effectiveThreshold;
                     const stockColor =
                       product.availableQty === 0 ? 'text-red-600'
-                      : stockPct < 0.2 ? 'text-amber-600'
+                      : isLowStock ? 'text-amber-600'
                       : 'text-emerald-600';
 
                     return (
@@ -796,11 +1082,31 @@ export default function ProductsPage() {
                               {product.description && (
                                 <p className="text-[11px] text-slate-400 truncate max-w-[240px]">{product.description}</p>
                               )}
+                              {(product.gauge || product.weight) && (
+                                <p className="mt-0.5 text-[10px] text-slate-400 truncate max-w-[240px]">
+                                  {[product.gauge, product.weight].filter(Boolean).join(' · ')}
+                                </p>
+                              )}
                             </div>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-slate-700 whitespace-nowrap">
-                          ₹{product.price.toFixed(2)}
+                          <div>₹{product.price.toFixed(2)}</div>
+                          {(product.purchasePrice || product.tax || product.transportationCost) ? (
+                            <div className="mt-0.5 text-[10px] text-slate-400 font-normal">
+                              P: ₹{(product.purchasePrice ?? 0).toFixed(2)}
+                              {' · '}
+                              T: ₹{(product.tax ?? 0).toFixed(2)}
+                              {' · '}
+                              C: ₹{(product.transportationCost ?? 0).toFixed(2)}
+                            </div>
+                          ) : null}
+                          <div className="mt-0.5 text-[10px] text-slate-400 font-normal">Included GST: {(product.saleGstRate ?? 0).toFixed(2)}%</div>
+                          {product.hsnCode ? <div className="mt-0.5 text-[10px] text-slate-400 font-normal">HSN: {product.hsnCode}</div> : null}
+                          {(product.sourceState || product.sourceDistrict) ? <div className="mt-0.5 text-[10px] text-slate-400 font-normal">Source: {[product.sourceDistrict, product.sourceState].filter(Boolean).join(', ')}</div> : null}
+                          <div className="mt-0.5 text-[10px] text-slate-400 font-normal">
+                            Alert: {effectiveThreshold} unit{effectiveThreshold === 1 ? '' : 's'}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-slate-700 tabular-nums">
                           {product.totalQty.toLocaleString()}
@@ -813,7 +1119,7 @@ export default function ProductsPage() {
                             {product.availableQty === 0 && (
                               <span className="text-[10px] font-semibold bg-red-50 text-red-600 border border-red-200 px-1.5 py-0.5 rounded-full">Out</span>
                             )}
-                            {product.availableQty > 0 && stockPct < 0.2 && (
+                            {isLowStock && (
                               <span className="text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-1.5 py-0.5 rounded-full">Low</span>
                             )}
                           </div>
@@ -1005,7 +1311,7 @@ export default function ProductsPage() {
               </FormField>
 
               <div className="grid grid-cols-2 gap-4">
-                <FormField label="Price ($)" required>
+                <FormField label="Product Price (₹, GST Included)" required>
                   <input
                     type="number"
                     min="0"
@@ -1022,6 +1328,25 @@ export default function ProductsPage() {
                     value={editState.sku}
                     onChange={e => setEditState(s => ({ ...s, sku: e.target.value.toUpperCase() }))}
                     className={`${inputBase} font-mono`}
+                  />
+                </FormField>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField label="Gauge" required>
+                  <input
+                    type="text"
+                    value={editState.gauge}
+                    onChange={e => setEditState(s => ({ ...s, gauge: e.target.value }))}
+                    className={inputBase}
+                  />
+                </FormField>
+                <FormField label="Weight" required>
+                  <input
+                    type="text"
+                    value={editState.weight}
+                    onChange={e => setEditState(s => ({ ...s, weight: e.target.value }))}
+                    className={inputBase}
                   />
                 </FormField>
               </div>
@@ -1049,6 +1374,104 @@ export default function ProductsPage() {
                   />
                   {editErrors.availableQty && <p className="mt-1 text-[11px] text-red-500">{editErrors.availableQty}</p>}
                 </FormField>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-4">
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-800">Purchase Details</h4>
+                  <p className="text-xs text-slate-400">Useful for utensil stock costing</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField label="Purchasing Price (₹)" required>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={editState.purchasePrice}
+                      onChange={e => setEditState(s => ({ ...s, purchasePrice: e.target.value }))}
+                      className={inputBase}
+                    />
+                  </FormField>
+                  <FormField label="Purchasing Date" required>
+                    <input
+                      type="date"
+                      value={editState.purchaseDate}
+                      onChange={e => setEditState(s => ({ ...s, purchaseDate: e.target.value }))}
+                      className={inputBase}
+                    />
+                  </FormField>
+                  <FormField label="Tax (₹)" required>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={editState.tax}
+                      onChange={e => setEditState(s => ({ ...s, tax: e.target.value }))}
+                      className={inputBase}
+                    />
+                  </FormField>
+                  <FormField label="HSN Code">
+                    <input
+                      type="text"
+                      value={editState.hsnCode}
+                      onChange={e => setEditState(s => ({ ...s, hsnCode: e.target.value }))}
+                      placeholder="e.g. 732393"
+                      className={inputBase}
+                    />
+                  </FormField>
+                  <FormField label="Source State">
+                    <input
+                      type="text"
+                      value={editState.sourceState}
+                      onChange={e => setEditState(s => ({ ...s, sourceState: e.target.value }))}
+                      placeholder="e.g. Maharashtra"
+                      list="superadmin-source-state-options"
+                      className={inputBase}
+                    />
+                  </FormField>
+                  <FormField label="Source District">
+                    <input
+                      type="text"
+                      value={editState.sourceDistrict}
+                      onChange={e => setEditState(s => ({ ...s, sourceDistrict: e.target.value }))}
+                      placeholder="e.g. Pune"
+                      list="superadmin-edit-source-district-options"
+                      className={inputBase}
+                    />
+                  </FormField>
+                  <FormField label="Included GST (%)">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={editState.saleGstRate}
+                      onChange={e => setEditState(s => ({ ...s, saleGstRate: e.target.value }))}
+                      className={inputBase}
+                    />
+                  </FormField>
+                  <FormField label="Transportation Cost (₹)" required>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={editState.transportationCost}
+                      onChange={e => setEditState(s => ({ ...s, transportationCost: e.target.value }))}
+                      className={inputBase}
+                    />
+                  </FormField>
+                  <FormField label="Low Stock Alert Qty">
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={editState.lowStockAlertQty}
+                      onChange={e => setEditState(s => ({ ...s, lowStockAlertQty: e.target.value }))}
+                      placeholder={`Defaults to ${defaultLowStockThreshold}`}
+                      className={inputBase}
+                    />
+                  </FormField>
+                </div>
               </div>
 
               <FormField label="Description">
@@ -1094,6 +1517,16 @@ export default function ProductsPage() {
                 <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center shrink-0 mt-0.5">
                   <Icon name="ExclamationTriangleIcon" size={20} className="text-red-500" />
                 </div>
+
+                <datalist id="superadmin-source-state-options">
+                  {sourceStateOptions.map(state => <option key={state} value={state} />)}
+                </datalist>
+                <datalist id="superadmin-source-district-options">
+                  {sourceDistrictOptions.map(district => <option key={district} value={district} />)}
+                </datalist>
+                <datalist id="superadmin-edit-source-district-options">
+                  {editSourceDistrictOptions.map(district => <option key={district} value={district} />)}
+                </datalist>
                 <div>
                   <h3 className="text-base font-semibold text-slate-800">Delete Product</h3>
                   <p className="text-sm text-slate-500 mt-1">

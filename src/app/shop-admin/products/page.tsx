@@ -3,17 +3,33 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import ShopAdminLayout from '@/components/ShopAdminLayout';
 import Icon from '@/components/ui/AppIcon';
 import { useAuth } from '@/contexts/AuthContext';
+import { INDIAN_STATES_AND_UTS } from '@/lib/locations/india';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Product {
   _id: string;
+  shopId?: string;
+  shopName?: string;
   sku: string;
+  hsnCode?: string;
+  sourceState?: string;
+  sourceDistrict?: string;
   name: string;
   description: string;
   price: number;
   totalQty: number;
   availableQty: number;
+  gauge?: string;
+  weight?: string;
+  purchasePrice?: number;
+  purchaseDate?: string | null;
+  tax?: number;
+  saleGstRate?: number;
+  transportationCost?: number;
+  lowStockAlertQty?: number | null;
+  purchaseDetailsStatus?: 'complete' | 'pending';
+  purchaseDetailsMissingFields?: string[];
   mfgDate?: string | null;
   expiryDate?: string | null;
   createdAt: string;
@@ -33,7 +49,18 @@ interface FormState {
   price: string;
   description: string;
   sku: string;
+  hsnCode: string;
+  sourceState: string;
+  sourceDistrict: string;
   skuMode: 'auto' | 'manual';
+  gauge: string;
+  weight: string;
+  purchasePrice: string;
+  purchaseDate: string;
+  tax: string;
+  saleGstRate: string;
+  transportationCost: string;
+  lowStockAlertQty: string;
   mfgDate: string;
   expiryDate: string;
 }
@@ -45,6 +72,17 @@ interface EditState {
   availableQty: string;
   description: string;
   sku: string;
+  hsnCode: string;
+  sourceState: string;
+  sourceDistrict: string;
+  gauge: string;
+  weight: string;
+  purchasePrice: string;
+  purchaseDate: string;
+  tax: string;
+  saleGstRate: string;
+  transportationCost: string;
+  lowStockAlertQty: string;
   mfgDate: string;
   expiryDate: string;
 }
@@ -66,11 +104,31 @@ type ExpiryFilter = 'all' | 'expiring-soon' | 'expired';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const EMPTY_FORM: FormState = { name: '', quantity: '', price: '', description: '', sku: '', skuMode: 'auto', mfgDate: '', expiryDate: '' };
+const EMPTY_FORM: FormState = { name: '', quantity: '', price: '', description: '', sku: '', hsnCode: '', sourceState: '', sourceDistrict: '', skuMode: 'auto', gauge: '', weight: '', purchasePrice: '', purchaseDate: '', tax: '', saleGstRate: '', transportationCost: '', lowStockAlertQty: '', mfgDate: '', expiryDate: '' };
 const PAGE_SIZE = 50;
 
 const inputBase =
   'w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all';
+
+function toOptionalNumber(value: string) {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function toOptionalThreshold(value: string) {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  if (Number.isNaN(parsed) || parsed < 0) return null;
+  return Math.floor(parsed);
+}
+
+function toOptionalRate(value: string) {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) return null;
+  return Number(parsed.toFixed(2));
+}
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
@@ -100,6 +158,7 @@ export default function ShopAdminProductsPage() {
   const [formErrors, setFormErrors]   = useState<Partial<Record<keyof FormState, string>>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError]       = useState('');
+  const [defaultLowStockThreshold, setDefaultLowStockThreshold] = useState(20);
 
   // Name autocomplete
   const [nameSuggestions, setNameSuggestions] = useState<Product[]>([]);
@@ -111,7 +170,7 @@ export default function ShopAdminProductsPage() {
 
   // Edit modal
   const [editTarget, setEditTarget]     = useState<Product | null>(null);
-  const [editState, setEditState]       = useState<EditState>({ name: '', price: '', totalQty: '', availableQty: '', description: '', sku: '' });
+  const [editState, setEditState]       = useState<EditState>({ name: '', price: '', totalQty: '', availableQty: '', description: '', sku: '', hsnCode: '', sourceState: '', sourceDistrict: '', gauge: '', weight: '', purchasePrice: '', purchaseDate: '', tax: '', saleGstRate: '', transportationCost: '', lowStockAlertQty: '', mfgDate: '', expiryDate: '' });
   const [editErrors, setEditErrors]     = useState<Partial<Record<keyof EditState, string>>>({});
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editApiError, setEditApiError] = useState('');
@@ -122,6 +181,38 @@ export default function ShopAdminProductsPage() {
 
   // Print barcodes modal
   const [printTarget, setPrintTarget]   = useState<PrintTarget | null>(null);
+
+  const sourceStateOptions = useMemo(
+    () => Array.from(new Set([
+      ...INDIAN_STATES_AND_UTS,
+      ...products.map(product => product.sourceState?.trim()).filter((value): value is string => Boolean(value)),
+    ])).sort((left, right) => left.localeCompare(right)),
+    [products],
+  );
+
+  const sourceDistrictOptions = useMemo(() => {
+    const selectedState = form.sourceState.trim().toLowerCase();
+    return Array.from(
+      new Set(
+        products
+          .filter(product => !selectedState || (product.sourceState ?? '').trim().toLowerCase() === selectedState)
+          .map(product => product.sourceDistrict?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ).sort((left, right) => left.localeCompare(right));
+  }, [form.sourceState, products]);
+
+  const editSourceDistrictOptions = useMemo(() => {
+    const selectedState = editState.sourceState.trim().toLowerCase();
+    return Array.from(
+      new Set(
+        products
+          .filter(product => !selectedState || (product.sourceState ?? '').trim().toLowerCase() === selectedState)
+          .map(product => product.sourceDistrict?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ).sort((left, right) => left.localeCompare(right));
+  }, [editState.sourceState, products]);
 
   // ── Search debounce ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -141,6 +232,7 @@ export default function ShopAdminProductsPage() {
       if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error ?? 'Failed to load products.'); }
       const data = await res.json();
       setProducts(data.products ?? []);
+      setDefaultLowStockThreshold(data.settings?.lowStockThreshold ?? 20);
       setTotalPages(data.pagination?.totalPages ?? 1);
       setTotalCount(data.pagination?.total ?? 0);
       setStats(data.stats ?? { totalProducts: 0, totalUnits: 0, availableUnits: 0, catalogValue: 0 });
@@ -189,6 +281,16 @@ export default function ShopAdminProductsPage() {
     if (!form.quantity || isNaN(qty) || qty < 1) errors.quantity = 'Enter a valid quantity (≥ 1).';
     const price = Number(form.price);
     if (!form.price || isNaN(price) || price < 0) errors.price = 'Enter a valid price.';
+    if (!form.gauge.trim()) errors.gauge = 'Gauge is required.';
+    if (!form.weight.trim()) errors.weight = 'Weight is required.';
+    const purchasePrice = toOptionalNumber(form.purchasePrice);
+    if (form.purchasePrice.trim() && (purchasePrice === null || purchasePrice < 0)) errors.purchasePrice = 'Enter a valid purchasing price.';
+    const tax = toOptionalNumber(form.tax);
+    if (form.tax.trim() && (tax === null || tax < 0)) errors.tax = 'Enter a valid tax amount.';
+    if (form.saleGstRate.trim() && toOptionalRate(form.saleGstRate) === null) errors.saleGstRate = 'Enter a valid GST percentage.';
+    const transportationCost = toOptionalNumber(form.transportationCost);
+    if (form.transportationCost.trim() && (transportationCost === null || transportationCost < 0)) errors.transportationCost = 'Enter a valid transportation cost.';
+    if (form.lowStockAlertQty.trim() && toOptionalThreshold(form.lowStockAlertQty) === null) errors.lowStockAlertQty = 'Enter a valid alert quantity.';
     if (form.skuMode === 'manual' && !form.sku.trim()) errors.sku = 'Enter a SKU or switch to Auto.';
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
@@ -211,6 +313,17 @@ export default function ShopAdminProductsPage() {
           price:       Number(form.price),
           quantity:    Number(form.quantity),
           sku:         form.skuMode === 'manual' ? form.sku.trim() : '',
+          hsnCode:     form.hsnCode.trim(),
+          sourceState: form.sourceState.trim(),
+          sourceDistrict: form.sourceDistrict.trim(),
+          gauge:       form.gauge.trim(),
+          weight:      form.weight.trim(),
+          purchasePrice: toOptionalNumber(form.purchasePrice),
+          purchaseDate: form.purchaseDate || null,
+          tax:         toOptionalNumber(form.tax),
+          saleGstRate: toOptionalRate(form.saleGstRate) ?? 0,
+          transportationCost: toOptionalNumber(form.transportationCost),
+          lowStockAlertQty: toOptionalThreshold(form.lowStockAlertQty),
           mfgDate:     form.mfgDate    || null,
           expiryDate:  form.expiryDate || null,
         }),
@@ -242,7 +355,27 @@ export default function ShopAdminProductsPage() {
   const openEdit = (p: Product) => {
     setEditTarget(p);
     const toDateInput = (d?: string | null) => d ? new Date(d).toISOString().split('T')[0] : '';
-    setEditState({ name: p.name, price: String(p.price), totalQty: String(p.totalQty), availableQty: String(p.availableQty), description: p.description, sku: p.sku, mfgDate: toDateInput(p.mfgDate), expiryDate: toDateInput(p.expiryDate) });
+    setEditState({
+      name: p.name,
+      price: String(p.price),
+      totalQty: String(p.totalQty),
+      availableQty: String(p.availableQty),
+      description: p.description,
+      sku: p.sku,
+      hsnCode: p.hsnCode ?? '',
+      sourceState: p.sourceState ?? '',
+      sourceDistrict: p.sourceDistrict ?? '',
+      gauge: p.gauge ?? '',
+      weight: p.weight ?? '',
+      purchasePrice: String(p.purchasePrice ?? ''),
+      purchaseDate: p.purchaseDate ?? '',
+      tax: String(p.tax ?? ''),
+      saleGstRate: String(p.saleGstRate ?? ''),
+      transportationCost: String(p.transportationCost ?? ''),
+      lowStockAlertQty: String(p.lowStockAlertQty ?? ''),
+      mfgDate: toDateInput(p.mfgDate),
+      expiryDate: toDateInput(p.expiryDate),
+    });
     setEditErrors({});
     setEditApiError('');
   };
@@ -256,6 +389,17 @@ export default function ShopAdminProductsPage() {
     if (isNaN(tq) || tq < 0) errors.totalQty = 'Invalid.';
     const aq = Number(editState.availableQty);
     if (isNaN(aq) || aq < 0 || aq > tq) errors.availableQty = 'Must be ≤ total qty.';
+    if (!editState.gauge.trim()) errors.gauge = 'Required.';
+    if (!editState.weight.trim()) errors.weight = 'Required.';
+    const purchasePrice = Number(editState.purchasePrice);
+    if (isNaN(purchasePrice) || purchasePrice < 0) errors.purchasePrice = 'Invalid.';
+    if (!editState.purchaseDate) errors.purchaseDate = 'Required.';
+    const tax = Number(editState.tax);
+    if (isNaN(tax) || tax < 0) errors.tax = 'Invalid.';
+    if (editState.saleGstRate.trim() && toOptionalRate(editState.saleGstRate) === null) errors.saleGstRate = 'Invalid.';
+    const transportationCost = Number(editState.transportationCost);
+    if (isNaN(transportationCost) || transportationCost < 0) errors.transportationCost = 'Invalid.';
+    if (editState.lowStockAlertQty.trim() && toOptionalThreshold(editState.lowStockAlertQty) === null) errors.lowStockAlertQty = 'Invalid.';
     setEditErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -269,7 +413,27 @@ export default function ShopAdminProductsPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ name: editState.name.trim(), description: editState.description.trim(), price: Number(editState.price), totalQty: Number(editState.totalQty), availableQty: Number(editState.availableQty), sku: editState.sku.trim(), mfgDate: editState.mfgDate || null, expiryDate: editState.expiryDate || null }),
+        body: JSON.stringify({
+          name: editState.name.trim(),
+          description: editState.description.trim(),
+          price: Number(editState.price),
+          totalQty: Number(editState.totalQty),
+          availableQty: Number(editState.availableQty),
+          sku: editState.sku.trim(),
+          hsnCode: editState.hsnCode.trim(),
+          sourceState: editState.sourceState.trim(),
+          sourceDistrict: editState.sourceDistrict.trim(),
+          gauge: editState.gauge.trim(),
+          weight: editState.weight.trim(),
+          purchasePrice: Number(editState.purchasePrice),
+          purchaseDate: editState.purchaseDate || null,
+          tax: Number(editState.tax),
+          saleGstRate: toOptionalRate(editState.saleGstRate) ?? 0,
+          transportationCost: Number(editState.transportationCost),
+          lowStockAlertQty: toOptionalThreshold(editState.lowStockAlertQty),
+          mfgDate: editState.mfgDate || null,
+          expiryDate: editState.expiryDate || null,
+        }),
       });
       const body = await res.json();
       if (!res.ok) { setEditApiError(body.error ?? 'Failed to update product.'); return; }
@@ -305,7 +469,7 @@ export default function ShopAdminProductsPage() {
   );
 
   const outOfStock    = useMemo(() => products.filter(p => p.availableQty === 0).length, [products]);
-  const lowStockCount = useMemo(() => products.filter(p => p.availableQty > 0 && p.availableQty / (p.totalQty || 1) < 0.2).length, [products]);
+  const lowStockCount = useMemo(() => products.filter(p => p.availableQty > 0 && p.availableQty <= (p.lowStockAlertQty ?? defaultLowStockThreshold)).length, [defaultLowStockThreshold, products]);
   const fmtValue = (n: number) => n >= 1_000_000 ? `₹${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `₹${(n / 1_000).toFixed(1)}k` : `₹${n.toFixed(2)}`;
 
   // Expiry helpers
@@ -421,7 +585,7 @@ export default function ShopAdminProductsPage() {
 
               {/* Price */}
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Unit Price (₹) <span className="text-red-500">*</span></label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Unit Price (₹, GST Included) <span className="text-red-500">*</span></label>
                 <input type="number" min="0" step="0.01" placeholder="0.00" value={form.price}
                   onChange={e => setField('price', e.target.value)}
                   className={`${inputBase} ${formErrors.price ? 'border-red-300 focus:border-red-400' : ''}`} />
@@ -466,6 +630,162 @@ export default function ShopAdminProductsPage() {
                     {formErrors.sku && <p className="mt-1 text-[11px] text-red-500">{formErrors.sku}</p>}
                   </>
                 )}
+              </div>
+            </div>
+
+            {/* Row 3: Gauge, Weight */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Gauge <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  placeholder="e.g. 18 Gauge"
+                  value={form.gauge}
+                  onChange={e => setField('gauge', e.target.value)}
+                  className={`${inputBase} ${formErrors.gauge ? 'border-red-300 focus:border-red-400' : ''}`}
+                />
+                {formErrors.gauge && <p className="mt-1 text-[11px] text-red-500">{formErrors.gauge}</p>}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Weight <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  placeholder="e.g. 450 gm"
+                  value={form.weight}
+                  onChange={e => setField('weight', e.target.value)}
+                  className={`${inputBase} ${formErrors.weight ? 'border-red-300 focus:border-red-400' : ''}`}
+                />
+                {formErrors.weight && <p className="mt-1 text-[11px] text-red-500">{formErrors.weight}</p>}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">HSN Code <span className="text-slate-400 font-normal">(optional)</span></label>
+                <input
+                  type="text"
+                  placeholder="e.g. 732393"
+                  value={form.hsnCode}
+                  onChange={e => setField('hsnCode', e.target.value)}
+                  className={inputBase}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Source State <span className="text-slate-400 font-normal">(optional)</span></label>
+                <input
+                  type="text"
+                  placeholder="e.g. Maharashtra"
+                  value={form.sourceState}
+                  onChange={e => setField('sourceState', e.target.value)}
+                  list="shopadmin-source-state-options"
+                  className={inputBase}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Source District <span className="text-slate-400 font-normal">(optional)</span></label>
+                <input
+                  type="text"
+                  placeholder="e.g. Pune"
+                  value={form.sourceDistrict}
+                  onChange={e => setField('sourceDistrict', e.target.value)}
+                  list="shopadmin-source-district-options"
+                  className={inputBase}
+                />
+              </div>
+            </div>
+
+            {/* Row 4: Purchase details */}
+            <div className="bg-slate-50/70 border border-slate-200 rounded-2xl p-4 mb-5">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-800">Purchase Details</h3>
+                  <p className="text-xs text-slate-400">Optional for shop admin — superadmin can complete missing cost details later</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Purchasing Price (₹) <span className="text-slate-400 font-normal">(optional)</span></label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={form.purchasePrice}
+                    onChange={e => setField('purchasePrice', e.target.value)}
+                    className={`${inputBase} ${formErrors.purchasePrice ? 'border-red-300 focus:border-red-400' : ''}`}
+                  />
+                  {formErrors.purchasePrice && <p className="mt-1 text-[11px] text-red-500">{formErrors.purchasePrice}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Purchasing Date <span className="text-slate-400 font-normal">(optional)</span></label>
+                  <input
+                    type="date"
+                    value={form.purchaseDate}
+                    onChange={e => setField('purchaseDate', e.target.value)}
+                    className={`${inputBase} ${formErrors.purchaseDate ? 'border-red-300 focus:border-red-400' : ''}`}
+                  />
+                  {formErrors.purchaseDate && <p className="mt-1 text-[11px] text-red-500">{formErrors.purchaseDate}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Tax (₹) <span className="text-slate-400 font-normal">(optional)</span></label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={form.tax}
+                    onChange={e => setField('tax', e.target.value)}
+                    className={`${inputBase} ${formErrors.tax ? 'border-red-300 focus:border-red-400' : ''}`}
+                  />
+                  {formErrors.tax && <p className="mt-1 text-[11px] text-red-500">{formErrors.tax}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Included GST (%) <span className="text-slate-400 font-normal">(optional)</span></label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    placeholder="e.g. 18"
+                    value={form.saleGstRate}
+                    onChange={e => setField('saleGstRate', e.target.value)}
+                    className={`${inputBase} ${formErrors.saleGstRate ? 'border-red-300 focus:border-red-400' : ''}`}
+                  />
+                  {formErrors.saleGstRate && <p className="mt-1 text-[11px] text-red-500">{formErrors.saleGstRate}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Transportation Cost (₹) <span className="text-slate-400 font-normal">(optional)</span></label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={form.transportationCost}
+                    onChange={e => setField('transportationCost', e.target.value)}
+                    className={`${inputBase} ${formErrors.transportationCost ? 'border-red-300 focus:border-red-400' : ''}`}
+                  />
+                  {formErrors.transportationCost && <p className="mt-1 text-[11px] text-red-500">{formErrors.transportationCost}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Low Stock Alert Qty <span className="text-slate-400 font-normal">(optional)</span></label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder={`Defaults to ${defaultLowStockThreshold}`}
+                    value={form.lowStockAlertQty}
+                    onChange={e => setField('lowStockAlertQty', e.target.value)}
+                    className={`${inputBase} ${formErrors.lowStockAlertQty ? 'border-red-300 focus:border-red-400' : ''}`}
+                  />
+                  {formErrors.lowStockAlertQty && <p className="mt-1 text-[11px] text-red-500">{formErrors.lowStockAlertQty}</p>}
+                </div>
               </div>
             </div>
 
@@ -593,8 +913,9 @@ export default function ShopAdminProductsPage() {
                   </td></tr>
                 ) : (
                   products.map(product => {
-                    const stockPct  = product.totalQty > 0 ? product.availableQty / product.totalQty : 0;
-                    const stockColor = product.availableQty === 0 ? 'text-red-600' : stockPct < 0.2 ? 'text-amber-600' : 'text-emerald-600';
+                    const effectiveThreshold = product.lowStockAlertQty ?? defaultLowStockThreshold;
+                    const isLowStock = product.availableQty > 0 && product.availableQty <= effectiveThreshold;
+                    const stockColor = product.availableQty === 0 ? 'text-red-600' : isLowStock ? 'text-amber-600' : 'text-emerald-600';
                     return (
                       <tr key={product._id} className="hover:bg-slate-50/70 transition-colors">
                         <td className="pl-5 pr-4 py-3">
@@ -606,18 +927,48 @@ export default function ShopAdminProductsPage() {
                               <Icon name="CubeIcon" size={14} className="text-emerald-500" />
                             </div>
                             <div className="min-w-0">
-                              <p className="text-sm font-medium text-slate-700 truncate max-w-[240px]">{product.name}</p>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <p className="text-sm font-medium text-slate-700 truncate max-w-[240px]">{product.name}</p>
+                                {product.purchaseDetailsStatus === 'pending' && (
+                                  <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                                    Details Pending
+                                  </span>
+                                )}
+                              </div>
                               {product.description && <p className="text-[11px] text-slate-400 truncate max-w-[240px]">{product.description}</p>}
+                              {product.purchaseDetailsStatus === 'pending' && (
+                                <p className="mt-0.5 text-[10px] text-amber-600 truncate max-w-[240px]">
+                                  Missing: {(product.purchaseDetailsMissingFields ?? []).join(', ')}
+                                </p>
+                              )}
+                              {(product.gauge || product.weight) && (
+                                <p className="mt-0.5 text-[10px] text-slate-400 truncate max-w-[240px]">
+                                  {[product.gauge, product.weight].filter(Boolean).join(' · ')}
+                                </p>
+                              )}
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-sm font-semibold text-slate-700 whitespace-nowrap">₹{product.price.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-slate-700 whitespace-nowrap">
+                          <div>₹{product.price.toFixed(2)}</div>
+                          {(product.purchasePrice || product.tax || product.transportationCost) ? (
+                            <div className="mt-0.5 text-[10px] text-slate-400 font-normal">
+                              P: ₹{(product.purchasePrice ?? 0).toFixed(2)}{' · '}
+                              T: ₹{(product.tax ?? 0).toFixed(2)}{' · '}
+                              C: ₹{(product.transportationCost ?? 0).toFixed(2)}
+                            </div>
+                          ) : null}
+                          <div className="mt-0.5 text-[10px] text-slate-400 font-normal">Included GST: {(product.saleGstRate ?? 0).toFixed(2)}%</div>
+                          {product.hsnCode ? <div className="mt-0.5 text-[10px] text-slate-400 font-normal">HSN: {product.hsnCode}</div> : null}
+                          {(product.sourceState || product.sourceDistrict) ? <div className="mt-0.5 text-[10px] text-slate-400 font-normal">Source: {[product.sourceDistrict, product.sourceState].filter(Boolean).join(', ')}</div> : null}
+                          <div className="mt-0.5 text-[10px] text-slate-400 font-normal">Alert: {effectiveThreshold} unit{effectiveThreshold === 1 ? '' : 's'}</div>
+                        </td>
                         <td className="px-4 py-3 text-sm font-semibold text-slate-700 tabular-nums">{product.totalQty.toLocaleString()}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <span className={`text-sm font-semibold tabular-nums ${stockColor}`}>{product.availableQty.toLocaleString()}</span>
                             {product.availableQty === 0 && <span className="text-[10px] font-semibold bg-red-50 text-red-600 border border-red-200 px-1.5 py-0.5 rounded-full">Out</span>}
-                            {product.availableQty > 0 && stockPct < 0.2 && <span className="text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-1.5 py-0.5 rounded-full">Low</span>}
+                            {isLowStock && <span className="text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-1.5 py-0.5 rounded-full">Low</span>}
                           </div>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
@@ -755,7 +1106,7 @@ export default function ShopAdminProductsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Price (₹) <span className="text-red-500">*</span></label>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Unit Price (₹, GST Included) <span className="text-red-500">*</span></label>
                   <input type="number" min="0" step="0.01" value={editState.price} onChange={e => setEditState(s => ({ ...s, price: e.target.value }))}
                     className={`${inputBase} ${editErrors.price ? 'border-red-300' : ''}`} />
                   {editErrors.price && <p className="mt-1 text-[11px] text-red-500">{editErrors.price}</p>}
@@ -764,6 +1115,21 @@ export default function ShopAdminProductsPage() {
                   <label className="block text-xs font-semibold text-slate-600 mb-1">SKU Code</label>
                   <input type="text" value={editState.sku} onChange={e => setEditState(s => ({ ...s, sku: e.target.value.toUpperCase() }))}
                     className={`${inputBase} font-mono`} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Gauge <span className="text-red-500">*</span></label>
+                  <input type="text" value={editState.gauge} onChange={e => setEditState(s => ({ ...s, gauge: e.target.value }))}
+                    className={`${inputBase} ${editErrors.gauge ? 'border-red-300' : ''}`} />
+                  {editErrors.gauge && <p className="mt-1 text-[11px] text-red-500">{editErrors.gauge}</p>}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Weight <span className="text-red-500">*</span></label>
+                  <input type="text" value={editState.weight} onChange={e => setEditState(s => ({ ...s, weight: e.target.value }))}
+                    className={`${inputBase} ${editErrors.weight ? 'border-red-300' : ''}`} />
+                  {editErrors.weight && <p className="mt-1 text-[11px] text-red-500">{editErrors.weight}</p>}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -778,6 +1144,75 @@ export default function ShopAdminProductsPage() {
                   <input type="number" min="0" step="1" value={editState.availableQty} onChange={e => setEditState(s => ({ ...s, availableQty: e.target.value }))}
                     className={`${inputBase} ${editErrors.availableQty ? 'border-red-300' : ''}`} />
                   {editErrors.availableQty && <p className="mt-1 text-[11px] text-red-500">{editErrors.availableQty}</p>}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-4">
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-800">Purchase Details</h4>
+                  <p className="text-xs text-slate-400">Useful for utensil stock costing</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Purchasing Price (₹) <span className="text-red-500">*</span></label>
+                    <input type="number" min="0" step="0.01" value={editState.purchasePrice} onChange={e => setEditState(s => ({ ...s, purchasePrice: e.target.value }))}
+                      className={`${inputBase} ${editErrors.purchasePrice ? 'border-red-300' : ''}`} />
+                    {editErrors.purchasePrice && <p className="mt-1 text-[11px] text-red-500">{editErrors.purchasePrice}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Purchasing Date <span className="text-red-500">*</span></label>
+                    <input type="date" value={editState.purchaseDate} onChange={e => setEditState(s => ({ ...s, purchaseDate: e.target.value }))}
+                      className={`${inputBase} ${editErrors.purchaseDate ? 'border-red-300' : ''}`} />
+                    {editErrors.purchaseDate && <p className="mt-1 text-[11px] text-red-500">{editErrors.purchaseDate}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Tax (₹) <span className="text-red-500">*</span></label>
+                    <input type="number" min="0" step="0.01" value={editState.tax} onChange={e => setEditState(s => ({ ...s, tax: e.target.value }))}
+                      className={`${inputBase} ${editErrors.tax ? 'border-red-300' : ''}`} />
+                    {editErrors.tax && <p className="mt-1 text-[11px] text-red-500">{editErrors.tax}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">HSN Code <span className="text-slate-400 font-normal">(optional)</span></label>
+                    <input type="text" value={editState.hsnCode} onChange={e => setEditState(s => ({ ...s, hsnCode: e.target.value }))}
+                      placeholder="e.g. 732393" className={inputBase} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Source State <span className="text-slate-400 font-normal">(optional)</span></label>
+                    <input type="text" value={editState.sourceState} onChange={e => setEditState(s => ({ ...s, sourceState: e.target.value }))}
+                      placeholder="e.g. Maharashtra" list="shopadmin-source-state-options" className={inputBase} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Source District <span className="text-slate-400 font-normal">(optional)</span></label>
+                    <input type="text" value={editState.sourceDistrict} onChange={e => setEditState(s => ({ ...s, sourceDistrict: e.target.value }))}
+                      placeholder="e.g. Pune" list="shopadmin-edit-source-district-options" className={inputBase} />
+                  </div>
+                  <div>
+
+                  <datalist id="shopadmin-source-state-options">
+                    {sourceStateOptions.map(state => <option key={state} value={state} />)}
+                  </datalist>
+                  <datalist id="shopadmin-source-district-options">
+                    {sourceDistrictOptions.map(district => <option key={district} value={district} />)}
+                  </datalist>
+                  <datalist id="shopadmin-edit-source-district-options">
+                    {editSourceDistrictOptions.map(district => <option key={district} value={district} />)}
+                  </datalist>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Included GST (%) <span className="text-slate-400 font-normal">(optional)</span></label>
+                    <input type="number" min="0" max="100" step="0.01" value={editState.saleGstRate} onChange={e => setEditState(s => ({ ...s, saleGstRate: e.target.value }))}
+                      className={`${inputBase} ${editErrors.saleGstRate ? 'border-red-300' : ''}`} />
+                    {editErrors.saleGstRate && <p className="mt-1 text-[11px] text-red-500">{editErrors.saleGstRate}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Transportation Cost (₹) <span className="text-red-500">*</span></label>
+                    <input type="number" min="0" step="0.01" value={editState.transportationCost} onChange={e => setEditState(s => ({ ...s, transportationCost: e.target.value }))}
+                      className={`${inputBase} ${editErrors.transportationCost ? 'border-red-300' : ''}`} />
+                    {editErrors.transportationCost && <p className="mt-1 text-[11px] text-red-500">{editErrors.transportationCost}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Low Stock Alert Qty <span className="text-slate-400 font-normal">(optional)</span></label>
+                    <input type="number" min="0" step="1" value={editState.lowStockAlertQty} onChange={e => setEditState(s => ({ ...s, lowStockAlertQty: e.target.value }))}
+                      placeholder={`Defaults to ${defaultLowStockThreshold}`} className={`${inputBase} ${editErrors.lowStockAlertQty ? 'border-red-300' : ''}`} />
+                    {editErrors.lowStockAlertQty && <p className="mt-1 text-[11px] text-red-500">{editErrors.lowStockAlertQty}</p>}
+                  </div>
                 </div>
               </div>
               <div>

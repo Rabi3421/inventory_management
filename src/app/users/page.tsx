@@ -4,7 +4,7 @@ import AppLayout from '@/components/AppLayout';
 import Icon from '@/components/ui/AppIcon';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type AppRole   = 'superadmin' | 'shopadmin';
+type AppRole   = 'superadmin' | 'shopadmin' | 'billingcounter';
 type SortKey   = 'name' | 'role' | 'shopName' | 'isActive' | 'lastLoginAt';
 type SortDir   = 'asc' | 'desc';
 
@@ -22,7 +22,7 @@ interface UserItem {
   initials: string;
 }
 
-interface KPI { total: number; active: number; superadmin: number; shopadmin: number; }
+interface KPI { total: number; active: number; superadmin: number; shopadmin: number; billingcounter: number; }
 interface ShopOption { _id: string; name: string; status: string; }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -38,7 +38,9 @@ function avatarColor(id: string) {
 function roleCfg(role: AppRole) {
   return role === 'superadmin'
     ? { label: 'Super Admin', badge: 'bg-indigo-50 text-indigo-700 border border-indigo-200', dot: 'bg-indigo-500' }
-    : { label: 'Shop Admin',  badge: 'bg-sky-50 text-sky-700 border border-sky-200',          dot: 'bg-sky-500'    };
+    : role === 'billingcounter'
+      ? { label: 'Billing Counter', badge: 'bg-amber-50 text-amber-700 border border-amber-200', dot: 'bg-amber-500' }
+      : { label: 'Shop Admin',  badge: 'bg-sky-50 text-sky-700 border border-sky-200',          dot: 'bg-sky-500'    };
 }
 function statusCfg(active: boolean) {
   return active
@@ -108,7 +110,9 @@ function UserModal({ initial, shops, prefilledShop, onClose, onSaved }: {
     if (!form.name.trim())  e.name  = 'Name is required';
     if (!form.email.trim()) e.email = 'Email is required';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Enter a valid email';
-    if (form.role === 'shopadmin' && !form.shopId) e.shopId = 'Assign a shop for Shop Admin role';
+    if ((form.role === 'shopadmin' || form.role === 'billingcounter') && !form.shopId) {
+      e.shopId = form.role === 'billingcounter' ? 'Assign a shop for Billing Counter role' : 'Assign a shop for Shop Admin role';
+    }
     if (!isEdit) {
       if (!form.password)          e.password        = 'Password is required';
       else if (form.password.length < 6) e.password  = 'At least 6 characters';
@@ -198,6 +202,7 @@ function UserModal({ initial, shops, prefilledShop, onClose, onSaved }: {
                     className={`${ib} border-slate-200 bg-white`}>
                     <option value="superadmin">Super Admin</option>
                     <option value="shopadmin">Shop Admin</option>
+                    <option value="billingcounter">Billing Counter</option>
                   </select>
                 </div>
                 <div>
@@ -451,7 +456,7 @@ function ShopCoverageCard({
 export default function UsersPage() {
   const [users, setUsers]           = useState<UserItem[]>([]);
   const [shops, setShops]           = useState<ShopOption[]>([]);
-  const [kpi, setKpi]               = useState<KPI>({ total: 0, active: 0, superadmin: 0, shopadmin: 0 });
+  const [kpi, setKpi]               = useState<KPI>({ total: 0, active: 0, superadmin: 0, shopadmin: 0, billingcounter: 0 });
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState('');
   const [search, setSearch]         = useState('');
@@ -478,7 +483,7 @@ export default function UsersPage() {
       if (!res.ok) throw new Error();
       const data = await res.json();
       setUsers(data.items   ?? []);
-      setKpi(data.kpi       ?? { total: 0, active: 0, superadmin: 0, shopadmin: 0 });
+      setKpi(data.kpi       ?? { total: 0, active: 0, superadmin: 0, shopadmin: 0, billingcounter: 0 });
       setShops(data.shops   ?? []);
     } catch {
       setError('Failed to load users. Please refresh.');
@@ -559,7 +564,7 @@ export default function UsersPage() {
               <h1 className="text-2xl font-bold text-slate-900">Users</h1>
               <span className="text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full">{kpi.total} total</span>
             </div>
-            <p className="text-slate-500 text-sm">Manage shop admin credentials, roles, and access control</p>
+            <p className="text-slate-500 text-sm">Manage superadmin, shop admin, and billing counter access</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button onClick={fetchUsers}
@@ -574,11 +579,12 @@ export default function UsersPage() {
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           {[
             { label: 'Active Users',  value: kpi.active,     icon: 'CheckCircleIcon',  color: 'bg-emerald-50 text-emerald-600', border: 'border-emerald-100' },
             { label: 'Super Admins',  value: kpi.superadmin, icon: 'ShieldCheckIcon',  color: 'bg-indigo-50 text-indigo-600',   border: 'border-indigo-100'  },
             { label: 'Shop Admins',   value: kpi.shopadmin,  icon: 'UserGroupIcon',    color: 'bg-sky-50 text-sky-600',         border: 'border-sky-100'     },
+            { label: 'Billing Staff', value: kpi.billingcounter, icon: 'ReceiptPercentIcon', color: 'bg-amber-50 text-amber-600', border: 'border-amber-100' },
             { label: 'Total Users',   value: kpi.total,      icon: 'UsersIcon',        color: 'bg-slate-50 text-slate-600',     border: 'border-slate-200'   },
           ].map(card => (
             <div key={card.label} className={`bg-white rounded-xl border ${card.border} shadow-sm p-4 flex items-center gap-3`}>
@@ -645,6 +651,7 @@ export default function UsersPage() {
                 <option value="All">All Roles</option>
                 <option value="superadmin">Super Admin</option>
                 <option value="shopadmin">Shop Admin</option>
+                <option value="billingcounter">Billing Counter</option>
               </select>
               <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'All' | 'Active' | 'Suspended')}
                 className="text-sm border border-slate-200 bg-white rounded-lg px-3 py-2 text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-300">

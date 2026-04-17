@@ -1,7 +1,8 @@
 'use client';
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AppLayout from '@/components/AppLayout';
 import Icon from '@/components/ui/AppIcon';
+import { INDIAN_STATES_AND_UTS } from '@/lib/locations/india';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -15,6 +16,8 @@ interface InventoryItem {
   shopId: string;
   shopName: string;
   sku: string;
+  sourceState?: string;
+  sourceDistrict?: string;
   name: string;
   description: string;
   price: number;
@@ -108,6 +111,8 @@ export default function InventoryPage() {
   const [debouncedSearch, setDebounced] = useState('');
   const [statusFilter, setStatusFilter] = useState<StockStatus | 'all'>('all');
   const [shopFilter, setShopFilter]     = useState('all');
+  const [sourceStateFilter, setSourceStateFilter] = useState('');
+  const [sourceDistrictFilter, setSourceDistrictFilter] = useState('');
   const [shops, setShops]               = useState<{ _id: string; name: string }[]>([]);
   const [sortKey, setSortKey]           = useState<SortKey>('createdAt');
   const [sortDir, setSortDir]           = useState<SortDir>('desc');
@@ -130,6 +135,26 @@ export default function InventoryPage() {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const sourceStateOptions = useMemo(
+    () => Array.from(new Set([
+      ...INDIAN_STATES_AND_UTS,
+      ...items.map(item => item.sourceState?.trim()).filter((value): value is string => Boolean(value)),
+    ])).sort((left, right) => left.localeCompare(right)),
+    [items],
+  );
+
+  const sourceDistrictOptions = useMemo(() => {
+    const selectedState = sourceStateFilter.trim().toLowerCase();
+    return Array.from(
+      new Set(
+        items
+          .filter(item => !selectedState || (item.sourceState ?? '').trim().toLowerCase() === selectedState)
+          .map(item => item.sourceDistrict?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ).sort((left, right) => left.localeCompare(right));
+  }, [items, sourceStateFilter]);
+
   // Fetch shops once for the filter dropdown
   useEffect(() => {
     fetch('/api/shops', { credentials: 'include' })
@@ -150,6 +175,8 @@ export default function InventoryPage() {
     try {
       const p = new URLSearchParams({ page: String(page), limit: '50', sort: sortKey, dir: sortDir, search: debouncedSearch, status: statusFilter });
       if (shopFilter !== 'all') p.set('shopId', shopFilter);
+      if (sourceStateFilter.trim()) p.set('sourceState', sourceStateFilter.trim());
+      if (sourceDistrictFilter.trim()) p.set('sourceDistrict', sourceDistrictFilter.trim());
       const res = await fetch(`/api/inventory?${p}`, { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to load inventory');
       const data = await res.json();
@@ -162,7 +189,7 @@ export default function InventoryPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, sortKey, sortDir, debouncedSearch, statusFilter, shopFilter]);
+  }, [page, sortKey, sortDir, debouncedSearch, statusFilter, shopFilter, sourceStateFilter, sourceDistrictFilter]);
 
   useEffect(() => { fetchInventory(); }, [fetchInventory]);
 
@@ -292,6 +319,22 @@ export default function InventoryPage() {
                 <option key={s._id} value={s._id}>{s.name}</option>
               ))}
             </select>
+            <input
+              type="text"
+              value={sourceStateFilter}
+              onChange={e => { setSourceStateFilter(e.target.value); setPage(1); }}
+              placeholder="Filter state…"
+              list="inventory-source-state-options"
+              className="w-36 text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            />
+            <input
+              type="text"
+              value={sourceDistrictFilter}
+              onChange={e => { setSourceDistrictFilter(e.target.value); setPage(1); }}
+              placeholder="Filter district…"
+              list="inventory-source-district-options"
+              className="w-36 text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            />
           </div>
 
           {loadError && (
@@ -307,6 +350,7 @@ export default function InventoryPage() {
                   {([
                     { key: 'name',         label: 'Product',       w: 'min-w-[220px]' },
                     { key: 'shop',         label: 'Shop',          w: 'min-w-[130px]' },
+                    { key: 'origin',       label: 'Origin',        w: 'min-w-[150px]' },
                     { key: 'price',        label: 'Price',         w: '' },
                     { key: 'totalQty',     label: 'Total Stock',   w: '' },
                     { key: 'availableQty', label: 'Available',     w: '' },
@@ -332,14 +376,14 @@ export default function InventoryPage() {
                 {isLoading
                   ? Array.from({ length: 5 }).map((_, i) => (
                       <tr key={i} className="animate-pulse">
-                        {Array.from({ length: 10 }).map((__, j) => (
+                        {Array.from({ length: 11 }).map((__, j) => (
                           <td key={j} className="px-4 py-4"><div className="h-3 bg-slate-100 rounded w-full max-w-[110px]" /></td>
                         ))}
                       </tr>
                     ))
                   : items.length === 0
                   ? (
-                    <tr><td colSpan={10} className="px-5 py-14 text-center">
+                    <tr><td colSpan={11} className="px-5 py-14 text-center">
                       <Icon name="ClipboardDocumentListIcon" size={32} className="text-slate-200 mx-auto mb-3" />
                       <p className="text-sm font-medium text-slate-400">No inventory items found</p>
                       <p className="text-xs text-slate-300 mt-1">Add products from the Products page to see them here</p>
@@ -369,6 +413,17 @@ export default function InventoryPage() {
                                 <Icon name="BuildingStorefrontIcon" size={11} className="shrink-0" />
                                 {item.shopName}
                               </span>
+                            </td>
+                            {/* Origin */}
+                            <td className="px-4 py-3.5">
+                              {(item.sourceState || item.sourceDistrict) ? (
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-700">{[item.sourceDistrict, item.sourceState].filter(Boolean).join(', ')}</p>
+                                  <p className="text-[10px] text-slate-400">Source location</p>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-slate-300">—</span>
+                              )}
                             </td>
                             {/* Price */}
                             <td className="px-4 py-3.5">
@@ -457,6 +512,13 @@ export default function InventoryPage() {
             </div>
           )}
         </div>
+
+        <datalist id="inventory-source-state-options">
+          {sourceStateOptions.map(state => <option key={state} value={state} />)}
+        </datalist>
+        <datalist id="inventory-source-district-options">
+          {sourceDistrictOptions.map(district => <option key={district} value={district} />)}
+        </datalist>
       </div>
 
       {/* ── Movement History Drawer ──────────────────────────────────────────── */}

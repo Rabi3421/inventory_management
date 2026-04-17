@@ -5,8 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
 import Icon from '@/components/ui/AppIcon';
 
-type Role = 'shopadmin' | 'superadmin';
-
 interface LoginFormData {
   email: string;
   password: string;
@@ -16,7 +14,6 @@ interface LoginFormData {
 export default function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [role, setRole] = useState<Role>('shopadmin');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState('');
@@ -41,7 +38,6 @@ export default function LoginForm() {
         body: JSON.stringify({
           email: data.email,
           password: data.password,
-          role,
           rememberMe: data.rememberMe,
           redirectTo: searchParams.get('next'),
         }),
@@ -76,28 +72,12 @@ export default function LoginForm() {
           Inventory Management System
         </h2>
         <p className="text-slate-500 text-sm">
-          Manage your multi-store inventory efficiently
+          Sign in once and we&apos;ll send you to the right dashboard
         </p>
       </div>
 
-      {/* Role Toggle */}
-      <div className="flex gap-1 p-1 bg-slate-100 rounded-xl mb-8">
-        {(['shopadmin', 'superadmin'] as Role[]).map(r => (
-          <button
-            key={`role-${r}`}
-            type="button"
-            onClick={() => { setRole(r); setAuthError(''); }}
-            className={`
-              flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all duration-200
-              ${role === r
-                ? 'bg-white text-indigo-700 shadow-card font-semibold'
-                : 'text-slate-500 hover:text-slate-700'
-              }
-            `}
-          >
-            {r === 'shopadmin' ? 'Shop Admin' : 'Superadmin'}
-          </button>
-        ))}
+      <div className="mb-8 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">
+        Use your account email and password. Based on your role, you&apos;ll be redirected automatically.
       </div>
 
       {/* Form */}
@@ -125,7 +105,7 @@ export default function LoginForm() {
               id="email"
               type="email"
               autoComplete="email"
-              placeholder={role === 'shopadmin' ? 'lekki@shopinventory.io' : 'super@shopinventory.io'}
+              placeholder="Enter your email"
               {...register('email', {
                 required: 'Email is required',
                 pattern: {
@@ -239,7 +219,7 @@ export default function LoginForm() {
           ) : (
             <>
               <Icon name="ArrowRightOnRectangleIcon" size={16} />
-              <span>Sign in as {role === 'shopadmin' ? 'Shop Admin' : 'Superadmin'}</span>
+              <span>Sign in</span>
             </>
           )}
         </button>
@@ -248,14 +228,14 @@ export default function LoginForm() {
       <div className="mt-6 p-4 bg-indigo-50 border border-indigo-100 rounded-xl">
         <p className="text-xs font-semibold text-indigo-700 mb-2 flex items-center gap-1.5">
           <Icon name="InformationCircleIcon" size={14} className="text-indigo-500" />
-          {role === 'shopadmin' ? 'Shop Admin' : 'Superadmin'} credentials
+          Demo credentials
         </p>
-        <div className="space-y-1">
+        <div className="space-y-3">
           <p className="text-xs text-indigo-600 font-mono">
-            Email: <span className="font-semibold">{role === 'shopadmin' ? 'lekki@shopinventory.io' : 'super@shopinventory.io'}</span>
+            Superadmin: <span className="font-semibold">super@shopinventory.io</span> / <span className="font-semibold">SuperAdmin2026!</span>
           </p>
           <p className="text-xs text-indigo-600 font-mono">
-            Password: <span className="font-semibold">{role === 'shopadmin' ? 'ShopAdmin2026!' : 'SuperAdmin2026!'}</span>
+            Shop Admin: <span className="font-semibold">lekki@shopinventory.io</span> / <span className="font-semibold">ShopAdmin2026!</span>
           </p>
         </div>
       </div>

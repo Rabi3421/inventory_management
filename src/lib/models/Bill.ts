@@ -10,10 +10,13 @@ import { Schema, models, model } from 'mongoose';
 export interface BillItem {
   productId: string;
   sku: string;
+  hsnCode?: string;
   name: string;
   qty: number;
   unitPrice: number;
   lineTotal: number;
+  gstRate: number;
+  gstAmount: number;
   balanceAfter: number;
 }
 
@@ -23,12 +26,14 @@ export interface Bill {
   shopId: string;
   items: BillItem[];
   subtotal: number;
-  gstRate: number;      // percentage, e.g. 5 / 12 / 18 / 28 / 0
-  gstAmount: number;    // subtotal * gstRate / 100
-  total: number;        // subtotal + gstAmount
+  gstRate: number;      // uniform bill GST rate if all items match, else 0
+  gstAmount: number;    // included GST amount across all items
+  total: number;        // customer-paid gross total (GST included)
   customerName: string;
   customerPhone: string;
   performedBy: string;
+  performedByUserId?: string;
+  performedByRole?: string;
   note: string;
   createdAt: Date;
   updatedAt: Date;
@@ -38,10 +43,13 @@ const billItemSchema = new Schema<BillItem>(
   {
     productId:    { type: String, required: true },
     sku:          { type: String, required: true, trim: true },
+    hsnCode:      { type: String, trim: true, default: '' },
     name:         { type: String, required: true, trim: true },
     qty:          { type: Number, required: true, min: 1 },
     unitPrice:    { type: Number, required: true, min: 0 },
     lineTotal:    { type: Number, required: true, min: 0 },
+    gstRate:      { type: Number, required: true, min: 0, max: 100, default: 0 },
+    gstAmount:    { type: Number, required: true, min: 0, default: 0 },
     balanceAfter: { type: Number, required: true, min: 0 },
   },
   { _id: false },
@@ -73,6 +81,8 @@ const billSchema = new Schema<Bill>(
     customerName:  { type: String, trim: true, default: '' },
     customerPhone: { type: String, trim: true, default: '' },
     performedBy:   { type: String, trim: true, default: 'shop-admin' },
+    performedByUserId: { type: String, trim: true, default: '' },
+    performedByRole:   { type: String, trim: true, default: '' },
     note:          { type: String, trim: true, default: '' },
   },
   { timestamps: true },

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
+import { cleanupExpiredBillingReservations, getReservedQtyByOtherUsers } from '@/lib/billing/reservations';
 import { ProductModel } from '@/lib/models/Product';
 
 interface RouteContext {
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     const { code } = await context.params;
     const shopId = request.nextUrl.searchParams.get('shopId')?.trim() ?? '';
+    const currentUserId = request.nextUrl.searchParams.get('currentUserId')?.trim() ?? '';
 
     if (!code) {
       return NextResponse.json({ error: 'Barcode code is required.' }, { status: 400 });
@@ -67,6 +69,20 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Product not found for this barcode.' }, { status: 404 });
     }
 
+    let reservedByOthers = 0;
+    let scannableQty = Number(product.availableQty ?? 0);
+
+    if (shopId) {
+      await cleanupExpiredBillingReservations(shopId);
+      const reservedMap = await getReservedQtyByOtherUsers({
+        shopId,
+        productIds: [product._id.toString()],
+        currentUserId,
+      });
+      reservedByOthers = reservedMap.get(product._id.toString()) ?? 0;
+      scannableQty = Math.max(0, Number(product.availableQty ?? 0) - reservedByOthers);
+    }
+
     return NextResponse.json({
       product: {
         _id:          product._id.toString(),
@@ -74,7 +90,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
         name:         product.name,
         description:  product.description ?? '',
         price:        product.price,
+        saleGstRate:  product.saleGstRate ?? 0,
         availableQty: product.availableQty,
+        scannableQty,
+        reservedByOthers,
         shopId:       product.shopId,
       },
     });

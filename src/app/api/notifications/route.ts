@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { ProductModel } from '@/lib/models/Product';
+import { SettingsModel } from '@/lib/models/Settings';
 
 /**
  * GET /api/notifications?shopId=
  * Returns stock-alert notifications for a shop:
  *   - out-of-stock products  → severity "critical"
- *   - low-stock products (1–20 units) → severity "warning"
+ *   - low-stock products (1–threshold units) → severity "warning"
  * Sorted: out-of-stock first, then low-stock ordered by availableQty asc.
  */
 export async function GET(request: NextRequest) {
@@ -18,19 +19,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ notifications: [], unreadCount: 0 });
     }
 
-    // Fetch out-of-stock products
+    const settings = await SettingsModel.findOne({}).lean();
+    const defaultThreshold = settings?.lowStockThreshold ?? 20;
+
     const outOfStock = await ProductModel.find({ shopId, availableQty: 0 })
-      .select('_id name sku availableQty')
+      .select('_id name sku availableQty lowStockAlertQty')
       .sort({ updatedAt: -1 })
       .limit(20)
       .lean();
 
-    // Fetch low-stock products (1–20 units)
     const lowStock = await ProductModel.find({
       shopId,
-      availableQty: { $gt: 0, $lte: 20 },
+      $expr: {
+        $and: [
+          { $gt: ['$availableQty', 0] },
+          { $lte: ['$availableQty', { $ifNull: ['$lowStockAlertQty', defaultThreshold] }] },
+        ],
+      },
     })
-      .select('_id name sku availableQty')
+      .select('_id name sku availableQty lowStockAlertQty')
       .sort({ availableQty: 1 })
       .limit(20)
       .lean();
@@ -55,6 +62,7 @@ export async function GET(request: NextRequest) {
         productName: p.name,
         sku: p.sku,
         availableQty: p.availableQty,
+        effectiveLowStockThreshold: p.lowStockAlertQty ?? defaultThreshold,
       })),
     ];
 

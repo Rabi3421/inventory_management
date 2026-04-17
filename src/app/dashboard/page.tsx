@@ -4,6 +4,7 @@ import AppLayout from '@/components/AppLayout';
 import DashboardHeader from './components/DashboardHeader';
 import KPIBentoGrid, { type KPIData } from './components/KPIBentoGrid';
 import ChartsSection, { type ShopwisePoint, type CategoryPoint } from './components/ChartsSection';
+import SalesVelocitySection, { type SalesVelocityData } from './components/SalesVelocitySection';
 import QuickActionsPanel, { type StockAlert } from './components/QuickActionsPanel';
 import InventoryTable from './components/InventoryTable';
 
@@ -12,6 +13,7 @@ interface DashboardData {
   shopwiseChart: ShopwisePoint[];
   categoryChart: CategoryPoint[];
   stockAlerts:   StockAlert[];
+  salesVelocity: SalesVelocityData;
 }
 
 export default function DashboardPage() {
@@ -23,7 +25,7 @@ export default function DashboardPage() {
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
     try {
-      const res  = await fetch('/api/dashboard');
+      const res  = await fetch(`/api/dashboard?range=${encodeURIComponent(range)}`);
       if (!res.ok) throw new Error();
       const json = await res.json();
       setData(json);
@@ -33,7 +35,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [range]);
 
   // Initial load
   useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
@@ -79,6 +81,11 @@ export default function DashboardPage() {
             />
           </div>
         </div>
+
+        <SalesVelocitySection
+          data={data?.salesVelocity ?? null}
+          loading={loading}
+        />
 
         <InventoryTable />
       </div>

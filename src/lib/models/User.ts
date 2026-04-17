@@ -37,7 +37,7 @@ const userSchema = new Schema(
     },
     role: {
       type: String,
-      enum: ['superadmin', 'shopadmin', 'shop_admin'],
+      enum: ['superadmin', 'shopadmin', 'shop_admin', 'billingcounter'],
       required: true,
       index: true,
     },

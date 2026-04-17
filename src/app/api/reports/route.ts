@@ -3,6 +3,8 @@ import { connectToDatabase } from '@/lib/db';
 import { ProductModel } from '@/lib/models/Product';
 import { InventoryLogModel } from '@/lib/models/InventoryLog';
 import { ShopModel } from '@/lib/models/Shop';
+import { SettingsModel } from '@/lib/models/Settings';
+import { getInventoryStockStatus } from '@/lib/inventory/thresholds';
 
 /**
  * GET /api/reports
@@ -25,6 +27,9 @@ import { ShopModel } from '@/lib/models/Shop';
 export async function GET(request: NextRequest) {
   try {
     await connectToDatabase();
+    const settings = await SettingsModel.findOne({}).lean();
+    const defaultThreshold = settings?.lowStockThreshold ?? 20;
+    const thresholdExpr = { $ifNull: ['$lowStockAlertQty', defaultThreshold] };
 
     const { searchParams } = request.nextUrl;
     const range     = (searchParams.get('range') ?? '30d') as '7d' | '30d' | '90d' | '1y';
@@ -45,7 +50,11 @@ export async function GET(request: NextRequest) {
       const rows = [
         ['SKU', 'Product Name', 'Price (₹)', 'Total Qty', 'Available Qty', 'Stock Value (₹)', 'Status'],
         ...products.map(p => {
-          const status = p.availableQty === 0 ? 'Out of Stock' : p.availableQty <= 20 ? 'Low Stock' : 'In Stock';
+          const statusKey = getInventoryStockStatus({
+            availableQty: p.availableQty,
+            lowStockAlertQty: p.lowStockAlertQty ?? null,
+          }, defaultThreshold);
+          const status = statusKey === 'out-of-stock' ? 'Out of Stock' : statusKey === 'low-stock' ? 'Low Stock' : 'In Stock';
           return [p.sku, `"${p.name}"`, p.price, p.totalQty, p.availableQty, (p.price * p.availableQty).toFixed(2), status];
         }),
       ];
@@ -116,7 +125,7 @@ export async function GET(request: NextRequest) {
             availableUnits: { $sum: '$availableQty' },
             totalProducts:  { $sum: 1 },
             outOfStock:     { $sum: { $cond: [{ $eq: ['$availableQty', 0] }, 1, 0] } },
-            lowStock:       { $sum: { $cond: [{ $and: [{ $gt: ['$availableQty', 0] }, { $lte: ['$availableQty', 20] }] }, 1, 0] } },
+            lowStock:       { $sum: { $cond: [{ $and: [{ $gt: ['$availableQty', 0] }, { $lte: ['$availableQty', thresholdExpr] }] }, 1, 0] } },
           },
         },
       ]),

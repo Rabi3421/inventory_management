@@ -82,7 +82,7 @@ export default function ShopAdminChartsSection({ weeklyData, categoryData, shopN
                 </PieChart>
               </ResponsiveContainer>
               </div>
-              <div className="flex-1 w-full space-y-2">y-2">
+              <div className="flex-1 w-full space-y-2">
                 {categoryData.map(cat => (
                   <div key={cat.name} className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
