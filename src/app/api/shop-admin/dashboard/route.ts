@@ -4,6 +4,8 @@ import { ProductModel } from '@/lib/models/Product';
 import { InventoryLogModel } from '@/lib/models/InventoryLog';
 import { getUserFromAccessToken } from '@/lib/auth/session';
 import { ACCESS_TOKEN_COOKIE } from '@/lib/auth/constants';
+import { SettingsModel } from '@/lib/models/Settings';
+import { getInventoryStockStatus } from '@/lib/inventory/thresholds';
 
 /**
  * GET /api/shop-admin/dashboard
@@ -25,6 +27,9 @@ export async function GET(request: NextRequest) {
     }
 
     await connectToDatabase();
+    const settings = await SettingsModel.findOne({}).lean();
+    const defaultThreshold = settings?.lowStockThreshold ?? 20;
+    const thresholdExpr = { $ifNull: ['$lowStockAlertQty', defaultThreshold] };
 
     // Start of this month
     const now = new Date();
@@ -49,7 +54,7 @@ export async function GET(request: NextRequest) {
             lowStock: {
               $sum: {
                 $cond: [
-                  { $and: [{ $gt: ['$availableQty', 0] }, { $lte: ['$availableQty', 20] }] },
+                  { $and: [{ $gt: ['$availableQty', 0] }, { $lte: ['$availableQty', thresholdExpr] }] },
                   1, 0,
                 ],
               },
@@ -63,7 +68,20 @@ export async function GET(request: NextRequest) {
       ]),
 
       // 2. Stock alerts — low/out products for this shop
-      ProductModel.find({ shopId, availableQty: { $lte: 20 } })
+      ProductModel.find({
+        shopId,
+        $or: [
+          { availableQty: 0 },
+          {
+            $expr: {
+              $and: [
+                { $gt: ['$availableQty', 0] },
+                { $lte: ['$availableQty', thresholdExpr] },
+              ],
+            },
+          },
+        ],
+      })
         .sort({ availableQty: 1 })
         .limit(10)
         .lean(),
@@ -160,8 +178,11 @@ export async function GET(request: NextRequest) {
       sku:       p.sku,
       name:      p.name,
       qty:       p.availableQty,
-      threshold: 20,
-      status:    p.availableQty === 0 ? 'out' : 'low',
+      threshold: p.lowStockAlertQty ?? defaultThreshold,
+      status:    getInventoryStockStatus({
+        availableQty: p.availableQty,
+        lowStockAlertQty: p.lowStockAlertQty ?? null,
+      }, defaultThreshold) === 'out-of-stock' ? 'out' : 'low',
     }));
 
     return NextResponse.json({

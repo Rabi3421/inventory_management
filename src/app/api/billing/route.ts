@@ -14,6 +14,8 @@ import { BillModel } from '@/lib/models/Bill';
  *   shopId:      string,
  *   items:       Array<{ productId: string; qty: number }>,
  *   performedBy: string,           // user name / email
+ *   performedByUserId?: string,    // authenticated user id
+ *   performedByRole?: string,      // authenticated role
  *   note?:       string,           // optional receipt note
  *   billNumber?: string,           // optional bill reference
  * }
@@ -28,11 +30,12 @@ export async function POST(request: NextRequest) {
     const shopId      = String(body.shopId ?? '').trim();
     const items       = Array.isArray(body.items) ? body.items : [];
     const performedBy = String(body.performedBy ?? 'shop-admin').trim();
+    const performedByUserId = String(body.performedByUserId ?? '').trim();
+    const performedByRole = String(body.performedByRole ?? '').trim();
     const note        = String(body.note ?? '').trim();
     const billNumber  = String(body.billNumber ?? `BILL-${Date.now()}`).trim();
     const customerName  = String(body.customerName ?? '').trim();
     const customerPhone = String(body.customerPhone ?? '').trim();
-    const gstRate       = Math.max(0, Math.min(100, Number(body.gstRate ?? 0)));
 
     if (!shopId) {
       return NextResponse.json({ error: 'shopId is required.' }, { status: 400 });
@@ -86,10 +89,13 @@ export async function POST(request: NextRequest) {
     const receiptItems: {
       productId:    string;
       sku:          string;
+      hsnCode:      string;
       name:         string;
       qty:          number;
       unitPrice:    number;
       lineTotal:    number;
+      gstRate:      number;
+      gstAmount:    number;
       balanceAfter: number;
     }[] = [];
 
@@ -99,6 +105,11 @@ export async function POST(request: NextRequest) {
       const product   = productMap.get(item.productId)!;
       const qty       = Number(item.qty);
       const newAvailable = product.availableQty - qty;
+      const gstRate = Math.max(0, Math.min(100, Number(product.saleGstRate ?? 0)));
+      const lineTotal = parseFloat((product.price * qty).toFixed(2));
+      const includedGst = gstRate > 0
+        ? parseFloat((lineTotal * gstRate / (100 + gstRate)).toFixed(2))
+        : 0;
 
       product.availableQty = newAvailable;
       await product.save();
@@ -119,17 +130,22 @@ export async function POST(request: NextRequest) {
       receiptItems.push({
         productId:    product._id.toString(),
         sku:          product.sku,
+        hsnCode:      String(product.hsnCode ?? '').trim(),
         name:         product.name,
         qty,
         unitPrice:    product.price,
-        lineTotal:    product.price * qty,
+        lineTotal,
+        gstRate,
+        gstAmount: includedGst,
         balanceAfter: newAvailable,
       });
     }
 
-    const subtotal   = parseFloat(receiptItems.reduce((s, i) => s + i.lineTotal, 0).toFixed(2));
-    const gstAmount  = parseFloat((subtotal * gstRate / 100).toFixed(2));
-    const total      = parseFloat((subtotal + gstAmount).toFixed(2));
+    const total      = parseFloat(receiptItems.reduce((sum, item) => sum + item.lineTotal, 0).toFixed(2));
+    const gstAmount  = parseFloat(receiptItems.reduce((sum, item) => sum + item.gstAmount, 0).toFixed(2));
+    const subtotal   = parseFloat((total - gstAmount).toFixed(2));
+    const uniqueRates = Array.from(new Set(receiptItems.map(item => item.gstRate)));
+    const gstRate = uniqueRates.length === 1 ? uniqueRates[0] : 0;
 
     // Persist the bill as a permanent record
     await BillModel.create({
@@ -143,6 +159,8 @@ export async function POST(request: NextRequest) {
       customerName,
       customerPhone,
       performedBy,
+      performedByUserId,
+      performedByRole,
       note,
       createdAt: now,
     });
@@ -158,6 +176,8 @@ export async function POST(request: NextRequest) {
           gstAmount,
           total,
           performedBy,
+          performedByUserId,
+          performedByRole,
           note,
           customerName,
           customerPhone,

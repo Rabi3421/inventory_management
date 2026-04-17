@@ -125,9 +125,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
           const code = `${prefix}-${zeroPad(unitNum, padWidth)}`;
           return `
       <div class="label">
-        <p class="unit-price">₹${product.price.toFixed(2)}</p>
+        <div class="label-top">
+          <img class="brand-logo" src="${request.nextUrl.origin}/assets/images/app_logo.png" alt="SRS brand logo" />
+          <p class="unit-price">₹${product.price.toFixed(2)}</p>
+        </div>
         <p class="product-name">${escapeHtml(product.name)}</p>
-        <img src="${src}" alt="barcode" />
+        <div class="barcode-wrap">
+          <img src="${src}" alt="barcode" />
+        </div>
       </div>`;
         },
       )
@@ -205,6 +210,26 @@ export async function GET(request: NextRequest, context: RouteContext) {
       break-inside: avoid;
     }
 
+    .label .label-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      margin-bottom: 2px;
+      min-height: 14px;
+    }
+
+    .label .brand-logo {
+      width: 52px;
+      max-width: 52px;
+      height: 14px;
+      object-fit: contain;
+      object-position: left center;
+      margin: 0;
+      display: block;
+      flex-shrink: 0;
+    }
+
     .label .product-name {
       font-size: 9px;
       font-weight: 700;
@@ -227,6 +252,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
       height: auto;
       display: block;
       margin: 0 auto;
+    }
+
+    .label .barcode-wrap {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
     }
 
     .label .unit-info {
@@ -264,13 +297,17 @@ export async function GET(request: NextRequest, context: RouteContext) {
         overflow: hidden;
       }
 
-      /* Last label — no extra blank page after it */
-      .label:last-child {
-        page-break-after: avoid;
-        break-after: avoid;
+      .label .label-top {
+        gap: 1.2mm;
+        margin-bottom: 0.6mm;
+        min-height: 3.8mm;
       }
-
-      .label .unit-price   { font-size: 7.5pt; font-weight: 800; }
+      .label .brand-logo {
+        width: 13mm;
+        max-width: 13mm;
+        height: 3.5mm;
+      }
+      .label .unit-price   { font-size: 7pt; font-weight: 800; }
       .label .product-name { font-size: 7pt; }
       .label .unit-info    { font-size: 6pt; }
       .label img           { max-width: 1.8in; max-height: 0.45in; height: auto; }

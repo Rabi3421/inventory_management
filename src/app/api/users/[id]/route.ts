@@ -21,7 +21,7 @@ export async function PUT(
 
     if (!name?.trim())  return NextResponse.json({ error: 'Name is required.' },  { status: 400 });
     if (!email?.trim()) return NextResponse.json({ error: 'Email is required.' }, { status: 400 });
-    if (!['superadmin', 'shopadmin'].includes(role))
+    if (!['superadmin', 'shopadmin', 'billingcounter'].includes(role))
       return NextResponse.json({ error: 'Invalid role.' }, { status: 400 });
 
     // Duplicate email check (exclude self)

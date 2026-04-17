@@ -123,7 +123,7 @@ export default function ChartsSection({ shopwiseData, categoryData, loading }: P
                   </PieChart>
                 </ResponsiveContainer>
                 </div>
-                <div className="flex-1 w-full space-y-2 sm:space-y-2.5">y-2 sm:space-y-2.5">
+                <div className="flex-1 w-full space-y-2 sm:space-y-2.5">
                   {(() => {
                     const total = categoryData.reduce((s, c) => s + c.value, 0);
                     return categoryData.map(cat => {

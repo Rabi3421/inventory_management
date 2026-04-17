@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
       ];
     }
     if (role !== 'All') {
-      // 'superadmin' | 'shopadmin'
+      // 'superadmin' | 'shopadmin' | 'billingcounter'
       filter.role = role;
     }
     if (status === 'Active')    filter.isActive = true;
@@ -45,6 +45,7 @@ export async function GET(request: NextRequest) {
           active:     { $sum: { $cond: ['$isActive', 1, 0] } },
           superadmin: { $sum: { $cond: [{ $eq: ['$role', 'superadmin'] }, 1, 0] } },
           shopadmin:  { $sum: { $cond: [{ $in:  ['$role', ['shopadmin', 'shop_admin']] }, 1, 0] } },
+          billingcounter: { $sum: { $cond: [{ $eq: ['$role', 'billingcounter'] }, 1, 0] } },
         },
       },
     ]);
@@ -53,7 +54,7 @@ export async function GET(request: NextRequest) {
       _id:        u._id.toString(),
       name:       u.name,
       email:      u.email,
-      role:       u.role,                  // 'superadmin' | 'shopadmin'
+      role:       u.role,
       shopId:     u.shopId    ?? null,
       shopName:   u.shopName  ?? null,
       isActive:   u.isActive,
@@ -66,7 +67,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       items,
-      kpi: kpi ?? { total: 0, active: 0, superadmin: 0, shopadmin: 0 },
+      kpi: kpi ?? { total: 0, active: 0, superadmin: 0, shopadmin: 0, billingcounter: 0 },
       shops: shops.map(s => ({ _id: s._id.toString(), name: s.name, status: s.status })),
     });
   } catch (err) {
@@ -91,7 +92,7 @@ export async function POST(request: NextRequest) {
     if (!email?.trim())    return NextResponse.json({ error: 'Email is required.' },    { status: 400 });
     if (!password)         return NextResponse.json({ error: 'Password is required.' }, { status: 400 });
     if (password.length < 6) return NextResponse.json({ error: 'Password must be at least 6 characters.' }, { status: 400 });
-    if (!['superadmin', 'shopadmin'].includes(role))
+    if (!['superadmin', 'shopadmin', 'billingcounter'].includes(role))
       return NextResponse.json({ error: 'Invalid role.' }, { status: 400 });
 
     const existing = await UserModel.findOne({ email: email.trim().toLowerCase() });

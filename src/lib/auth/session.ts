@@ -61,7 +61,7 @@ async function issueTokens(user: AuthUser, sessionId: string, rememberMe: boolea
 export async function authenticateUser(params: {
   email: string;
   password: string;
-  role: AppRole;
+  role?: AppRole;
   rememberMe: boolean;
   request?: NextRequest;
 }) {
@@ -74,8 +74,7 @@ export async function authenticateUser(params: {
     return null;
   }
   const normalizedDbRole = normalizeRole(user.role);
-  const normalizedParamRole = normalizeRole(params.role);
-  if (normalizedDbRole !== normalizedParamRole) {
+  if (params.role && normalizedDbRole !== normalizeRole(params.role)) {
     return null;
   }
 

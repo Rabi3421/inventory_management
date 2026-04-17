@@ -3,6 +3,8 @@ import { connectToDatabase } from '@/lib/db';
 import { ProductModel } from '@/lib/models/Product';
 import { InventoryLogModel } from '@/lib/models/InventoryLog';
 import { ShopModel } from '@/lib/models/Shop';
+import { SettingsModel } from '@/lib/models/Settings';
+import { getInventoryStockStatus } from '@/lib/inventory/thresholds';
 
 /**
  * GET /api/inventory
@@ -16,6 +18,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const search  = searchParams.get('search')?.trim() ?? '';
     const shopId  = searchParams.get('shopId')?.trim() ?? '';
+    const sourceState = searchParams.get('sourceState')?.trim() ?? '';
+    const sourceDistrict = searchParams.get('sourceDistrict')?.trim() ?? '';
     const status  = searchParams.get('status') ?? 'all';
     const page    = Math.max(1, Number(searchParams.get('page') ?? 1));
     const limit   = Math.min(100, Math.max(1, Number(searchParams.get('limit') ?? 50)));
@@ -23,19 +27,37 @@ export async function GET(request: NextRequest) {
     const dir     = searchParams.get('dir') === 'asc' ? 1 : -1;
     const allowedSorts = ['name', 'price', 'totalQty', 'availableQty', 'createdAt'];
     const sortField = allowedSorts.includes(sort) ? sort : 'createdAt';
+    const settings = await SettingsModel.findOne({}).lean();
+    const defaultThreshold = settings?.lowStockThreshold ?? 20;
+    const thresholdExpr = { $ifNull: ['$lowStockAlertQty', defaultThreshold] };
 
     // Build filter
     const filter: Record<string, unknown> = {};
     if (shopId) filter.shopId = shopId;
+    if (sourceState) filter.sourceState = { $regex: sourceState, $options: 'i' };
+    if (sourceDistrict) filter.sourceDistrict = { $regex: sourceDistrict, $options: 'i' };
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },
         { sku:  { $regex: search, $options: 'i' } },
+        { sourceState: { $regex: search, $options: 'i' } },
+        { sourceDistrict: { $regex: search, $options: 'i' } },
       ];
     }
-    if (status === 'out-of-stock')  filter.availableQty = 0;
-    if (status === 'low-stock')     filter.$expr = { $and: [{ $gt: ['$availableQty', 0] }, { $lte: ['$availableQty', 20] }] };
-    if (status === 'in-stock')      filter.availableQty = { $gt: 20 };
+    if (status === 'out-of-stock') filter.availableQty = 0;
+    if (status === 'low-stock') {
+      filter.$expr = {
+        $and: [
+          { $gt: ['$availableQty', 0] },
+          { $lte: ['$availableQty', thresholdExpr] },
+        ],
+      };
+    }
+    if (status === 'in-stock') {
+      filter.$expr = {
+        $gt: ['$availableQty', thresholdExpr],
+      };
+    }
 
     const [products, total] = await Promise.all([
       ProductModel.find(filter)
@@ -47,7 +69,10 @@ export async function GET(request: NextRequest) {
     ]);
 
     // Aggregate stats — scoped to the same shopId (or global if no shopId)
-    const statsBaseFilter: Record<string, unknown> = shopId ? { shopId } : {};
+    const statsBaseFilter: Record<string, unknown> = {};
+    if (shopId) statsBaseFilter.shopId = shopId;
+    if (sourceState) statsBaseFilter.sourceState = { $regex: sourceState, $options: 'i' };
+    if (sourceDistrict) statsBaseFilter.sourceDistrict = { $regex: sourceDistrict, $options: 'i' };
     const [statsResult] = await ProductModel.aggregate([
       { $match: statsBaseFilter },
       {
@@ -58,7 +83,20 @@ export async function GET(request: NextRequest) {
           availableUnits:{ $sum: '$availableQty' },
           catalogValue:  { $sum: { $multiply: ['$price', '$availableQty'] } },
           outOfStock:    { $sum: { $cond: [{ $eq: ['$availableQty', 0] }, 1, 0] } },
-          lowStock:      { $sum: { $cond: [{ $and: [{ $gt: ['$availableQty', 0] }, { $lte: ['$availableQty', 20] }] }, 1, 0] } },
+          lowStock:      {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $gt: ['$availableQty', 0] },
+                    { $lte: ['$availableQty', thresholdExpr] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
         },
       },
     ]);
@@ -91,10 +129,10 @@ export async function GET(request: NextRequest) {
 
     const items = products.map(p => {
       const log = logMap.get(p._id.toString());
-      const avail = p.availableQty;
-      const stockStatus =
-        avail === 0 ? 'out-of-stock' :
-        avail <= 20 ? 'low-stock' : 'in-stock';
+      const stockStatus = getInventoryStockStatus({
+        availableQty: p.availableQty,
+        lowStockAlertQty: p.lowStockAlertQty ?? null,
+      }, defaultThreshold);
 
       return {
         _id:           p._id.toString(),
@@ -102,10 +140,14 @@ export async function GET(request: NextRequest) {
         shopName:      shopNameMap.get(p.shopId) ?? 'Unassigned',
         sku:           p.sku,
         name:          p.name,
+        sourceState:   p.sourceState ?? '',
+        sourceDistrict:p.sourceDistrict ?? '',
         description:   p.description ?? '',
         price:         p.price,
         totalQty:      p.totalQty,
         availableQty:  p.availableQty,
+        lowStockAlertQty: p.lowStockAlertQty ?? null,
+        effectiveLowStockThreshold: p.lowStockAlertQty ?? defaultThreshold,
         stockValue:    p.price * p.availableQty,
         stockStatus,
         createdAt:     p.createdAt,
@@ -131,8 +173,9 @@ export async function GET(request: NextRequest) {
             catalogValue:   statsResult.catalogValue,
             outOfStock:     statsResult.outOfStock,
             lowStock:       statsResult.lowStock,
+            defaultLowStockThreshold: defaultThreshold,
           }
-        : { totalProducts: 0, totalUnits: 0, availableUnits: 0, catalogValue: 0, outOfStock: 0, lowStock: 0 },
+        : { totalProducts: 0, totalUnits: 0, availableUnits: 0, catalogValue: 0, outOfStock: 0, lowStock: 0, defaultLowStockThreshold: defaultThreshold },
     });
   } catch (err) {
     console.error('[GET /api/inventory]', err);

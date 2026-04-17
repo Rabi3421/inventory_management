@@ -1,9 +1,10 @@
 'use client';
-import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import ShopAdminLayout from '@/components/ShopAdminLayout';
 import Icon from '@/components/ui/AppIcon';
 import { useAuth } from '@/contexts/AuthContext';
+import { INDIAN_STATES_AND_UTS } from '@/lib/locations/india';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,8 @@ interface InventoryItem {
   price: number;
   totalQty: number;
   availableQty: number;
+  lowStockAlertQty?: number | null;
+  effectiveLowStockThreshold?: number;
   stockValue: number;
   stockStatus: StockStatus;
   createdAt: string;
@@ -40,6 +43,7 @@ interface Stats {
   catalogValue: number;
   outOfStock: number;
   lowStock: number;
+  defaultLowStockThreshold?: number;
 }
 
 interface LogEntry {
@@ -107,7 +111,24 @@ interface AddProductModalProps {
 }
 
 function AddProductModal({ shopId, shopName, onClose, onSuccess }: AddProductModalProps) {
-  const [form, setForm] = useState({ name: '', description: '', price: '', quantity: '', sku: '' });
+  const [form, setForm] = useState({
+    name: '',
+    description: '',
+    price: '',
+    quantity: '',
+    sku: '',
+    hsnCode: '',
+    sourceState: '',
+    sourceDistrict: '',
+    gauge: '',
+    weight: '',
+    purchasePrice: '',
+    purchaseDate: '',
+    tax: '',
+    saleGstRate: '',
+    transportationCost: '',
+    lowStockAlertQty: '',
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const nameRef = useRef<HTMLInputElement>(null);
@@ -117,8 +138,35 @@ function AddProductModal({ shopId, shopName, onClose, onSuccess }: AddProductMod
   const [suggestions, setSuggestions] = useState<{ _id: string; name: string; price: number; sku: string; description: string }[]>([]);
   const [showSug, setShowSug] = useState(false);
   const [sugLoading, setSugLoading] = useState(false);
+  const [sourceSuggestions, setSourceSuggestions] = useState<Array<{ sourceState?: string; sourceDistrict?: string }>>([]);
+
+  const sourceStateOptions = useMemo(
+    () => Array.from(new Set([
+      ...INDIAN_STATES_AND_UTS,
+      ...sourceSuggestions.map(item => item.sourceState?.trim()).filter((value): value is string => Boolean(value)),
+    ])).sort((left, right) => left.localeCompare(right)),
+    [sourceSuggestions],
+  );
+
+  const sourceDistrictOptions = useMemo(() => {
+    const selectedState = form.sourceState.trim().toLowerCase();
+    return Array.from(
+      new Set(
+        sourceSuggestions
+          .filter(item => !selectedState || (item.sourceState ?? '').trim().toLowerCase() === selectedState)
+          .map(item => item.sourceDistrict?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ).sort((left, right) => left.localeCompare(right));
+  }, [form.sourceState, sourceSuggestions]);
 
   useEffect(() => { nameRef.current?.focus(); }, []);
+  useEffect(() => {
+    fetch(`/api/products?shopId=${encodeURIComponent(shopId)}&limit=200&sort=name&dir=asc`, { credentials: 'include' })
+      .then(response => response.ok ? response.json() : Promise.reject())
+      .then(data => setSourceSuggestions(data.products ?? []))
+      .catch(() => setSourceSuggestions([]));
+  }, [shopId]);
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setShowSug(false);
@@ -152,18 +200,63 @@ function AddProductModal({ shopId, shopName, onClose, onSuccess }: AddProductMod
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
 
+  const toOptionalNumber = (value: string) => {
+    if (!value.trim()) return null;
+    const parsed = Number(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  };
+
+  const toOptionalThreshold = (value: string) => {
+    if (!value.trim()) return null;
+    const parsed = Number(value);
+    if (Number.isNaN(parsed) || parsed < 0) return null;
+    return Math.floor(parsed);
+  };
+
+  const toOptionalRate = (value: string) => {
+    if (!value.trim()) return null;
+    const parsed = Number(value);
+    if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) return null;
+    return Number(parsed.toFixed(2));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     if (!form.name.trim()) { setError('Product name is required.'); return; }
     if (!form.price || isNaN(Number(form.price)) || Number(form.price) < 0) { setError('Enter a valid price.'); return; }
     if (!form.quantity || isNaN(Number(form.quantity)) || Number(form.quantity) < 1) { setError('Quantity must be at least 1.'); return; }
+    if (!form.gauge.trim()) { setError('Gauge is required.'); return; }
+    if (!form.weight.trim()) { setError('Weight is required.'); return; }
+    if (form.purchasePrice.trim() && (toOptionalNumber(form.purchasePrice) === null || Number(form.purchasePrice) < 0)) { setError('Enter a valid purchasing price.'); return; }
+    if (form.tax.trim() && (toOptionalNumber(form.tax) === null || Number(form.tax) < 0)) { setError('Enter a valid tax amount.'); return; }
+    if (form.saleGstRate.trim() && toOptionalRate(form.saleGstRate) === null) { setError('Enter a valid included GST percentage.'); return; }
+    if (form.transportationCost.trim() && (toOptionalNumber(form.transportationCost) === null || Number(form.transportationCost) < 0)) { setError('Enter a valid transportation cost.'); return; }
+    if (form.lowStockAlertQty.trim() && toOptionalThreshold(form.lowStockAlertQty) === null) { setError('Enter a valid low stock alert quantity.'); return; }
     setSubmitting(true);
     try {
       const res = await fetch('/api/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shopId, name: form.name.trim(), description: form.description.trim(), price: Number(form.price), quantity: Math.floor(Number(form.quantity)), sku: form.sku.trim() || undefined }),
+        body: JSON.stringify({
+          shopId,
+          name: form.name.trim(),
+          description: form.description.trim(),
+          price: Number(form.price),
+          quantity: Math.floor(Number(form.quantity)),
+          sku: form.sku.trim() || undefined,
+          hsnCode: form.hsnCode.trim(),
+          sourceState: form.sourceState.trim(),
+          sourceDistrict: form.sourceDistrict.trim(),
+          gauge: form.gauge.trim(),
+          weight: form.weight.trim(),
+          purchasePrice: toOptionalNumber(form.purchasePrice),
+          purchaseDate: form.purchaseDate || null,
+          tax: toOptionalNumber(form.tax),
+          saleGstRate: toOptionalRate(form.saleGstRate) ?? 0,
+          transportationCost: toOptionalNumber(form.transportationCost),
+          lowStockAlertQty: toOptionalThreshold(form.lowStockAlertQty),
+        }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? 'Failed to add product.'); return; }
@@ -221,7 +314,7 @@ function AddProductModal({ shopId, shopName, onClose, onSuccess }: AddProductMod
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Unit Price (₹) <span className="text-red-500">*</span></label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Unit Price (₹, GST Included) <span className="text-red-500">*</span></label>
               <input type="number" min="0" step="0.01" value={form.price} onChange={set('price')} placeholder="0.00"
                 className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all" />
             </div>
@@ -237,6 +330,73 @@ function AddProductModal({ shopId, shopName, onClose, onSuccess }: AddProductMod
               className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all font-mono" />
           </div>
           <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5">HSN Code <span className="text-slate-400 font-normal">(optional)</span></label>
+            <input type="text" value={form.hsnCode} onChange={set('hsnCode')} placeholder="e.g. 732393"
+              className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Source State <span className="text-slate-400 font-normal">(optional)</span></label>
+              <input type="text" value={form.sourceState} onChange={set('sourceState')} placeholder="e.g. Maharashtra" list="shopadmin-inventory-source-state-options"
+                className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Source District <span className="text-slate-400 font-normal">(optional)</span></label>
+              <input type="text" value={form.sourceDistrict} onChange={set('sourceDistrict')} placeholder="e.g. Pune" list="shopadmin-inventory-source-district-options"
+                className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Gauge <span className="text-red-500">*</span></label>
+              <input type="text" value={form.gauge} onChange={set('gauge')} placeholder="e.g. 18 Gauge"
+                className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Weight <span className="text-red-500">*</span></label>
+              <input type="text" value={form.weight} onChange={set('weight')} placeholder="e.g. 450 gm"
+                className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all" />
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">Purchase Details</h3>
+              <p className="text-xs text-slate-400">Optional for shop admin — if unknown now, superadmin can fill it later</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Purchasing Price (₹) <span className="text-slate-400 font-normal">(optional)</span></label>
+                <input type="number" min="0" step="0.01" value={form.purchasePrice} onChange={set('purchasePrice')} placeholder="0.00"
+                  className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Purchasing Date <span className="text-slate-400 font-normal">(optional)</span></label>
+                <input type="date" value={form.purchaseDate} onChange={set('purchaseDate')}
+                  className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Tax (₹) <span className="text-slate-400 font-normal">(optional)</span></label>
+                <input type="number" min="0" step="0.01" value={form.tax} onChange={set('tax')} placeholder="0.00"
+                  className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Included GST (%) <span className="text-slate-400 font-normal">(optional)</span></label>
+                <input type="number" min="0" max="100" step="0.01" value={form.saleGstRate} onChange={set('saleGstRate')} placeholder="e.g. 18"
+                  className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Transportation Cost (₹) <span className="text-slate-400 font-normal">(optional)</span></label>
+                <input type="number" min="0" step="0.01" value={form.transportationCost} onChange={set('transportationCost')} placeholder="0.00"
+                  className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Low Stock Alert Qty <span className="text-slate-400 font-normal">(optional)</span></label>
+                <input type="number" min="0" step="1" value={form.lowStockAlertQty} onChange={set('lowStockAlertQty')} placeholder="Use default setting"
+                  className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all" />
+              </div>
+            </div>
+          </div>
+          <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1.5">Description <span className="text-slate-400 font-normal">(optional)</span></label>
             <textarea value={form.description} onChange={set('description')} rows={2} placeholder="Short product description…"
               className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all resize-none" />
@@ -247,6 +407,12 @@ function AddProductModal({ shopId, shopName, onClose, onSuccess }: AddProductMod
               {submitting ? (<><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" /></svg>Adding…</>) : (<><Icon name="PlusIcon" size={15} />Add Product</>)}
             </button>
           </div>
+          <datalist id="shopadmin-inventory-source-state-options">
+            {sourceStateOptions.map(state => <option key={state} value={state} />)}
+          </datalist>
+          <datalist id="shopadmin-inventory-source-district-options">
+            {sourceDistrictOptions.map(district => <option key={district} value={district} />)}
+          </datalist>
         </form>
       </div>
     </div>
@@ -447,7 +613,7 @@ function InventoryPageInner() {
             { label: 'Total SKUs',   value: stats?.totalProducts,  sub: 'Unique products',   icon: 'ClipboardDocumentListIcon', cls: 'text-slate-800'   },
             { label: 'Total Units',  value: stats?.totalUnits,     sub: 'All stock added',   icon: 'CubeIcon',                  cls: 'text-slate-800'   },
             { label: 'Available',    value: stats?.availableUnits, sub: 'Ready to sell',     icon: 'CheckCircleIcon',           cls: 'text-emerald-700' },
-            { label: 'Low Stock',    value: stats?.lowStock,       sub: '≤ 20 units left',   icon: 'ExclamationTriangleIcon',   cls: 'text-amber-600'   },
+            { label: 'Low Stock',    value: stats?.lowStock,       sub: 'Per-product alert threshold',   icon: 'ExclamationTriangleIcon',   cls: 'text-amber-600'   },
             { label: 'Out of Stock', value: stats?.outOfStock,     sub: 'Urgent attention',  icon: 'XCircleIcon',               cls: 'text-red-600'     },
             { label: 'Stock Value',  value: stats ? fmtMoney(stats.catalogValue) : undefined, sub: 'Available × price', icon: 'BanknotesIcon', cls: 'text-slate-800' },
           ] as { label: string; value: number | string | undefined; sub: string; icon: string; cls: string }[]).map(c => (

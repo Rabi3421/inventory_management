@@ -15,12 +15,19 @@ interface NavItem {
 const baseNavItems: NavItem[] = [
   { label: 'Dashboard', icon: 'HomeIcon', href: '/dashboard', group: 'main' },
   { label: 'Products', icon: 'CubeIcon', href: '/dashboard/products', group: 'main' },
+  { label: 'Pending Products', icon: 'ExclamationTriangleIcon', href: '/dashboard/pending-products', group: 'main' },
   { label: 'Inventory', icon: 'ClipboardDocumentListIcon', href: '/dashboard/inventory', group: 'main' },
   { label: 'Shops', icon: 'BuildingStorefrontIcon', href: '/shops', group: 'main' },
   { label: 'Users', icon: 'UsersIcon', href: '/users', group: 'admin' },
   { label: 'Reports', icon: 'ChartBarIcon', href: '/reports', group: 'admin' },
+  { label: 'Profit Tracker', icon: 'BanknotesIcon', href: '/reports/profit', group: 'admin' },
+  { label: 'Customer Tracker', icon: 'PhoneIcon', href: '/reports/customers', group: 'admin' },
   { label: 'Settings', icon: 'Cog6ToothIcon', href: '/settings', group: 'admin' },
 ];
+
+function isRouteActive(activeRoute: string, href: string) {
+  return activeRoute === href;
+}
 
 interface SidebarProps {
   activeRoute?: string;
@@ -32,6 +39,7 @@ export default function Sidebar({ activeRoute = '/dashboard' }: SidebarProps) {
     return false;
   });
   const [inventoryCount, setInventoryCount] = useState<number>(0);
+  const [pendingProductsCount, setPendingProductsCount] = useState<number>(0);
 
   useEffect(() => {
     function handleResize() {
@@ -46,13 +54,24 @@ export default function Sidebar({ activeRoute = '/dashboard' }: SidebarProps) {
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (data?.pagination?.total !== undefined) setInventoryCount(data.pagination.total); })
       .catch(() => {});
+
+    fetch('/api/products?limit=1&purchaseDetailsStatus=pending')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.pagination?.total !== undefined) setPendingProductsCount(data.pagination.total); })
+      .catch(() => {});
   }, []);
 
-  const navItems = baseNavItems.map(item =>
-    item.href === '/dashboard/inventory'
-      ? { ...item, badge: inventoryCount }
-      : item
-  );
+  const navItems = baseNavItems.map(item => {
+    if (item.href === '/dashboard/inventory') {
+      return { ...item, badge: inventoryCount };
+    }
+
+    if (item.href === '/dashboard/pending-products') {
+      return { ...item, badge: pendingProductsCount };
+    }
+
+    return item;
+  });
 
   const mainItems = navItems.filter(i => i.group === 'main');
   const adminItems = navItems.filter(i => i.group === 'admin');
@@ -100,7 +119,7 @@ export default function Sidebar({ activeRoute = '/dashboard' }: SidebarProps) {
           </p>
         )}
         {mainItems.map(item => (
-          <NavLink key={`nav-${item.href}`} item={item} active={activeRoute === item.href} collapsed={collapsed} />
+          <NavLink key={`nav-${item.href}`} item={item} active={isRouteActive(activeRoute, item.href)} collapsed={collapsed} />
         ))}
 
         <div className={`${collapsed ? 'my-2' : 'my-3'} border-t border-slate-100`} />
@@ -111,7 +130,7 @@ export default function Sidebar({ activeRoute = '/dashboard' }: SidebarProps) {
           </p>
         )}
         {adminItems.map(item => (
-          <NavLink key={`nav-${item.href}`} item={item} active={activeRoute === item.href} collapsed={collapsed} />
+          <NavLink key={`nav-${item.href}`} item={item} active={isRouteActive(activeRoute, item.href)} collapsed={collapsed} />
         ))}
       </nav>
 
