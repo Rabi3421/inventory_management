@@ -2,13 +2,13 @@
  * GET /api/products/:id/barcodes
  *
  * Returns an HTML page containing one barcode label per unit of the product.
- * The HTML is designed to be opened in a new browser tab and printed directly
- * (window.print()).  Each label is sized for a standard 2″×1″ thermal label
- * (50.8 mm × 25.4 mm) but looks fine on A4 too — the browser wraps labels
- * automatically.
+ * The HTML is designed to be opened in a new browser tab and printed on A4.
+ * The screen preview renders exact A4 sheets with labels laid out across each
+ * page, so the printed result matches the preview.
  *
  * Query params:
  *   copies  – number of copies to print per unit (default 1)
+ *   size    – label size preset: small, medium, large (default medium)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -16,6 +16,7 @@ import mongoose from 'mongoose';
 import bwipjs from 'bwip-js/node';
 import { connectToDatabase } from '@/lib/db';
 import { ProductModel } from '@/lib/models/Product';
+import { getBarcodeLabelSize } from '@/lib/barcodeLabelSizes';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -25,28 +26,55 @@ function zeroPad(n: number, width: number) {
   return String(n).padStart(width, '0');
 }
 
+const A4_WIDTH_MM = 210;
+const A4_HEIGHT_MM = 297;
+
+function inchesToMm(value: number) {
+  return Number((value * 25.4).toFixed(2));
+}
+
+function chunkArray<T>(items: T[], chunkSize: number) {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
 /**
  * Same logic as in the POST route — derives a short prefix from the product name.
  * e.g. "Steel Glass" → "SG", "Fogg Perfume" → "FP", "Samsung" → "SAM"
  */
 function unitPrefix(name: string): string {
-  const words = name.trim().toUpperCase().replace(/[^A-Z0-9 ]/g, '').split(/\s+/).filter(Boolean);
-  if (words.length >= 2) return words.map(w => w[0]).join('').slice(0, 4);
+  const words = name
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]/g, '')
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length >= 2)
+    return words
+      .map((w) => w[0])
+      .join('')
+      .slice(0, 4);
   return (words[0] ?? 'P').slice(0, 4);
 }
 
 /** Render a single barcode as a base64 PNG using bwip-js */
-async function renderBarcodePng(text: string): Promise<string> {
+async function renderBarcodePng(
+  text: string,
+  labelSize: ReturnType<typeof getBarcodeLabelSize>
+): Promise<string> {
   const png = await bwipjs.toBuffer({
     bcid: 'code128',
     text,
-    scale: 3,
-    height: 8,       // bar height in mm
-    includetext: true,
+    scale: labelSize.barcodeScale,
+    height: labelSize.barcodeHeightMm,
+    includetext: false,
     textxalign: 'center',
-    textsize: 9,
-    paddingwidth: 4,
-    paddingheight: 2,
+    textsize: labelSize.barcodeTextSize,
+    paddingwidth: labelSize.barcodePaddingWidth,
+    paddingheight: labelSize.barcodePaddingHeight,
   });
   return `data:image/png;base64,${png.toString('base64')}`;
 }
@@ -67,8 +95,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     const copies = Math.min(
       10,
-      Math.max(1, Number(request.nextUrl.searchParams.get('copies') ?? 1)),
+      Math.max(1, Number(request.nextUrl.searchParams.get('copies') ?? 1))
     );
+    const labelSize = getBarcodeLabelSize(request.nextUrl.searchParams.get('size'));
 
     // `from` lets a restock print only the newly added units (e.g. ?from=141)
     const counter = (product as { unitCounter?: number }).unitCounter ?? product.totalQty;
@@ -95,7 +124,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const images: string[] = [];
     for (let i = 0; i < unitCodes.length; i += CHUNK) {
       const chunk = unitCodes.slice(i, i + CHUNK);
-      const rendered = await Promise.all(chunk.map(renderBarcodePng));
+      const rendered = await Promise.all(chunk.map((code) => renderBarcodePng(code, labelSize)));
       images.push(...rendered);
     }
 
@@ -109,33 +138,65 @@ export async function GET(request: NextRequest, context: RouteContext) {
         const code = `${prefix}-${zeroPad(unitNum, padWidth)}`;
         return { code, pngBase64: src };
       });
-      return NextResponse.json({
-        productName: product.name,
-        sku: product.sku,
-        price: product.price,
-        labels,
-      }, { headers: { 'Cache-Control': 'no-store' } });
+      return NextResponse.json(
+        {
+          productName: product.name,
+          sku: product.sku,
+          price: product.price,
+          labelSize: {
+            widthIn: labelSize.widthIn,
+            heightIn: labelSize.heightIn,
+          },
+          labels,
+        },
+        { headers: { 'Cache-Control': 'no-store' } }
+      );
     }
 
-    // Build the printable HTML page
-    const labelItems = images
-      .map(
-        (src, idx) => {
-          const unitNum = fromUnit + Math.floor(idx / copies);
-          const code = `${prefix}-${zeroPad(unitNum, padWidth)}`;
-          return `
-      <div class="label">
-        <div class="label-top">
-          <img class="brand-logo" src="${request.nextUrl.origin}/assets/images/app_logo.png" alt="SRS brand logo" />
-          <p class="unit-price">₹${product.price.toFixed(2)}</p>
-        </div>
-        <p class="product-name">${escapeHtml(product.name)}</p>
-        <div class="barcode-wrap">
-          <img src="${src}" alt="barcode" />
-        </div>
-      </div>`;
-        },
-      )
+    const labelWidthMm = inchesToMm(labelSize.widthIn);
+    const labelHeightMm = inchesToMm(labelSize.heightIn);
+    const sheetContentWidthMm = A4_WIDTH_MM - labelSize.sheetMarginMm * 2;
+    const sheetContentHeightMm = A4_HEIGHT_MM - labelSize.sheetMarginMm * 2;
+    const labelsPerRow = Math.max(
+      1,
+      Math.floor((sheetContentWidthMm + labelSize.sheetGapMm) / (labelWidthMm + labelSize.sheetGapMm))
+    );
+    const labelsPerColumn = Math.max(
+      1,
+      Math.floor((sheetContentHeightMm + labelSize.sheetGapMm) / (labelHeightMm + labelSize.sheetGapMm))
+    );
+    const labelsPerSheet = labelsPerRow * labelsPerColumn;
+
+    // Build the printable A4 preview pages.
+    const labelItems = images.map((src, idx) => {
+      const unitNum = fromUnit + Math.floor(idx / copies);
+      const code = `${prefix}-${zeroPad(unitNum, padWidth)}`;
+      return `
+        <div class="label">
+          <div class="label-top">
+            <img class="brand-logo" src="${request.nextUrl.origin}/assets/images/app_logo.png" alt="SRS brand logo" />
+            <p class="product-name">${escapeHtml(product.name)}</p>
+            <p class="unit-price">₹${product.price.toFixed(2)}</p>
+          </div>
+          <div class="barcode-wrap">
+            <img src="${src}" alt="barcode ${escapeHtml(code)}" />
+          </div>
+          <p class="barcode-code">${escapeHtml(code)}</p>
+        </div>`;
+    });
+
+    const sheets = chunkArray(labelItems, labelsPerSheet)
+      .map((sheetLabels, idx) => {
+        const emptySlots = Math.max(0, labelsPerSheet - sheetLabels.length);
+        const fillers = Array.from({ length: emptySlots }, () => '<div class="label empty"></div>').join(
+          '\n'
+        );
+        return `
+      <section class="sheet" aria-label="A4 barcode sheet ${idx + 1}">
+${sheetLabels.join('\n')}
+${fillers}
+      </section>`;
+      })
       .join('\n');
 
     const html = `<!DOCTYPE html>
@@ -150,7 +211,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     body {
       font-family: Arial, Helvetica, sans-serif;
       background: #f8f9fa;
-      padding: 16px;
+      padding: 16px 0 32px;
     }
 
     /* ── Screen toolbar ── */
@@ -162,8 +223,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
       border: 1px solid #e2e8f0;
       border-radius: 12px;
       padding: 14px 20px;
-      margin-bottom: 20px;
+      margin: 0 auto 20px;
       gap: 12px;
+      width: 210mm;
+      max-width: calc(100vw - 32px);
     }
     .toolbar h1 {
       font-size: 15px;
@@ -192,37 +255,65 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
     .btn-print:hover { background: #4338ca; }
 
-    /* ── Label grid ── */
-    .grid {
+    /* ── A4 sheet preview ── */
+    .sheets {
       display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .sheet {
+      width: ${A4_WIDTH_MM}mm;
+      height: ${A4_HEIGHT_MM}mm;
+      padding: ${labelSize.sheetMarginMm}mm;
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
+      display: grid;
+      grid-template-columns: repeat(${labelsPerRow}, ${labelWidthMm}mm);
+      grid-auto-rows: ${labelHeightMm}mm;
+      gap: ${labelSize.sheetGapMm}mm;
+      align-content: start;
+      justify-content: center;
     }
 
     .label {
       background: #fff;
       border: 1px solid #cbd5e1;
-      border-radius: 6px;
-      width: 192px;   /* ~50.8 mm at 96 dpi */
-      padding: 6px 8px;
+      border-radius: 3px;
+      width: ${labelWidthMm}mm;
+      height: ${labelHeightMm}mm;
+      padding: ${labelSize.printPadding};
       text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      overflow: hidden;
       page-break-inside: avoid;
       break-inside: avoid;
+    }
+
+    .label.empty {
+      border-color: transparent;
     }
 
     .label .label-top {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 6px;
-      margin-bottom: 2px;
-      min-height: 14px;
+      gap: 1.2mm;
+      margin-bottom: 0.3mm;
+      min-height: ${labelSize.printTopMinHeight};
+      position: relative;
+      width: 100%;
     }
 
     .label .brand-logo {
-      width: 52px;
-      max-width: 52px;
-      height: 14px;
+      width: ${labelSize.printLogoWidth};
+      max-width: ${labelSize.printLogoWidth};
+      height: ${labelSize.printLogoHeight};
       object-fit: contain;
       object-position: left center;
       margin: 0;
@@ -231,20 +322,26 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
 
     .label .product-name {
-      font-size: 9px;
+      font-size: ${labelSize.printProductFont};
       font-weight: 700;
       color: #1e293b;
-      margin-bottom: 4px;
+      margin: 0;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      left: 50%;
+      max-width: 42%;
+      position: absolute;
+      text-align: center;
+      transform: translateX(-50%);
+      width: max-content;
     }
 
     .label .unit-price {
-      font-size: 10px;
+      font-size: ${labelSize.printPriceFont};
       font-weight: 800;
       color: #1e293b;
-      margin-bottom: 2px;
+      margin-bottom: 0;
     }
 
     .label img {
@@ -260,6 +357,27 @@ export async function GET(request: NextRequest, context: RouteContext) {
       align-items: center;
       justify-content: center;
       overflow: hidden;
+      flex: 1;
+      min-height: 0;
+      margin-top: -0.3mm;
+    }
+
+    .barcode-wrap img {
+      width: 100%;
+      height: auto;
+      max-width: ${labelSize.printBarcodeMaxWidth};
+      max-height: ${labelSize.printBarcodeMaxHeight};
+    }
+
+    .label .barcode-code {
+      color: #111827;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: calc(${labelSize.printProductFont} + 0.2pt);
+      font-weight: 400;
+      line-height: 1;
+      letter-spacing: 0.45mm;
+      margin-top: 0.4mm;
+      white-space: nowrap;
     }
 
     .label .unit-info {
@@ -269,9 +387,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
       font-family: monospace;
     }
 
-    /* ── Thermal printer: one label = one 2×1 inch page ── */
+    /* ── A4 paper ── */
     @page {
-      size: 2in 1in portrait;
+      size: A4 portrait;
       margin: 0;
     }
 
@@ -279,38 +397,24 @@ export async function GET(request: NextRequest, context: RouteContext) {
     @media print {
       html, body { background: #fff; margin: 0; padding: 0; }
       .toolbar { display: none !important; }
-      .grid { display: block; gap: 0; }
-
-      /* Each label fills exactly one thermal strip */
-      .label {
-        width: 2in;
-        height: 1in;
+      .sheets {
+        display: block;
+      }
+      .sheet {
+        width: ${A4_WIDTH_MM}mm;
+        height: ${A4_HEIGHT_MM}mm;
+        padding: ${labelSize.sheetMarginMm}mm;
         border: none;
-        border-radius: 0;
-        padding: 1.5mm 2mm;
+        box-shadow: none;
+        page-break-inside: avoid;
+        break-inside: avoid;
         page-break-after: always;
         break-after: page;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        overflow: hidden;
       }
-
-      .label .label-top {
-        gap: 1.2mm;
-        margin-bottom: 0.6mm;
-        min-height: 3.8mm;
+      .sheet:last-child {
+        page-break-after: auto;
+        break-after: auto;
       }
-      .label .brand-logo {
-        width: 13mm;
-        max-width: 13mm;
-        height: 3.5mm;
-      }
-      .label .unit-price   { font-size: 7pt; font-weight: 800; }
-      .label .product-name { font-size: 7pt; }
-      .label .unit-info    { font-size: 6pt; }
-      .label img           { max-width: 1.8in; max-height: 0.45in; height: auto; }
     }
   </style>
 </head>
@@ -318,12 +422,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
   <div class="toolbar">
     <div>
       <h1>📦 ${escapeHtml(product.name)}</h1>
-      <p>SKU: ${escapeHtml(product.sku)} &nbsp;·&nbsp; ${unitCodes.length} label${unitCodes.length !== 1 ? 's' : ''} total (${totalUnits} unit${totalUnits !== 1 ? 's' : ''}${copies > 1 ? ` × ${copies} copies` : ''}${fromParam ? ` · restocked batch` : ''})</p>
+      <p>SKU: ${escapeHtml(product.sku)} &nbsp;·&nbsp; ${unitCodes.length} label${unitCodes.length !== 1 ? 's' : ''} total (${totalUnits} unit${totalUnits !== 1 ? 's' : ''}${copies > 1 ? ` × ${copies} copies` : ''}${fromParam ? ` · restocked batch` : ''}) &nbsp;·&nbsp; ${labelWidthMm}mm × ${labelHeightMm}mm labels &nbsp;·&nbsp; ${labelsPerSheet} per A4 sheet</p>
     </div>
     <button class="btn-print" onclick="window.print()">🖨️ Print Labels</button>
   </div>
-  <div class="grid">
-${labelItems}
+  <div class="sheets">
+${sheets}
   </div>
   <script>
     // Print button in toolbar — send to physical printer
